@@ -43,6 +43,24 @@ Numbers below come from the engine's own telemetry (`ops` and `digest_ops` tabs)
 | Messages sent without approval | 0 |
 | Monthly cost | $0 |
 
+## Screenshots
+
+**Discord review card**: one per draft, with everything needed to decide.
+
+![Discord review card](screenshots/discord-card.png)
+
+**Workflows in n8n**
+
+| Personal GTM Engine | GTM Contact Finder | Personal GTM Digest |
+|---|---|---|
+| ![Personal GTM Engine workflow](screenshots/Personal-GTM-Engine-Canva.png) | ![GTM Contact Finder workflow](<screenshots/GTM-Contact Finder-Canva.png>) | ![Personal GTM Digest workflow](screenshots/Persona-GTM-Digest-Canva.png) |
+
+**Google Sheet**: accounts with score breakdowns, and the `ops` telemetry tab.
+
+![Accounts tab](screenshots/sheet-accounts.png)
+
+![Ops tab](screenshots/ops.png)
+
 ## Why it is built this way
 
 | Principle | Where it shows |
