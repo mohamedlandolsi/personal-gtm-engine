@@ -1,0 +1,680 @@
+{
+  "name": "Personal GTM Digest",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        -128
+      ],
+      "id": "c42ace49-3f88-4d95-a52d-a4eb111c9508",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        64
+      ],
+      "id": "4f404517-3b4c-4f1c-add9-626cb70f6f36",
+      "name": "Manual Trigger"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_SPREADSHEET_ID",
+          "mode": "list",
+          "cachedResultName": "personal-gtm-engine",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "config",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit#gid=0"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        224,
+        -32
+      ],
+      "id": "2e6f2e3d-ea18-4ca7-9943-f27601d61c74",
+      "name": "Fetch Config",
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleApi": {
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_SPREADSHEET_ID",
+          "mode": "list",
+          "cachedResultName": "personal-gtm-engine",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1756566230,
+          "mode": "list",
+          "cachedResultName": "outreach_queue",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit#gid=1756566230"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        448,
+        -32
+      ],
+      "id": "240c4d28-8c06-4738-b4f8-fdd9895b959c",
+      "name": "Fetch Outreach Queue",
+      "alwaysOutputData": true,
+      "executeOnce": true,
+      "credentials": {
+        "googleApi": {
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_SPREADSHEET_ID",
+          "mode": "list",
+          "cachedResultName": "personal-gtm-engine",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 17930613,
+          "mode": "list",
+          "cachedResultName": "accounts",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit#gid=17930613"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        672,
+        -32
+      ],
+      "id": "e4aa7f78-e303-4f48-ac2f-8aa77c17bb85",
+      "name": "Fetch Accounts",
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleApi": {
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_SPREADSHEET_ID",
+          "mode": "list",
+          "cachedResultName": "personal-gtm-engine",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 554904753,
+          "mode": "list",
+          "cachedResultName": "contacts",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit#gid=554904753"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        896,
+        -32
+      ],
+      "id": "85ca937f-15dd-405b-a300-302401f0290b",
+      "name": "Fetch Contacts",
+      "alwaysOutputData": true,
+      "executeOnce": true,
+      "credentials": {
+        "googleApi": {
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "value": "YOUR_DIGEST_LOG_TABLE_ID",
+          "mode": "list",
+          "cachedResultName": "digest_log",
+          "cachedResultUrl": ""
+        },
+        "returnAll": true
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        -32
+      ],
+      "id": "cb8b0209-2428-458b-9b08-3c559b7592af",
+      "name": "Fetch Digest Log",
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const safeAll = (name) => { try { return $(name).all().map(i => i.json); } catch (e) { return []; } };\n\n// ---- config (digest block, safe defaults) ----\nlet cfg = {};\ntry { cfg = JSON.parse((safeAll('Fetch Config').find(r => r && r.key === 'config_json') || {}).value || '{}'); } catch (e) { cfg = {}; }\nconst D = Object.assign({\n  enabled: true, hot_score: 80, warm_score: 65, max_embeds: 8, post_when_empty: false,\n  include_statuses: ['pending', 'approved', 'edited'],\n  sheet_url: '', outreach_gid: ''\n}, cfg.digest || {});\n\n// one line, trimmed\nconst cut = (s, n) => { s = String(s == null ? '' : s).replace(/\\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 3) + '...' : s; };\nconst orDash = (s, n) => cut(s, n) || '-';\n// keeps line breaks, for text you will copy. Shown in a code block so Discord gives it a copy button.\nconst block = (s, n) => {\n  s = String(s == null ? '' : s).replace(/```/g, \"'''\").replace(/\\r/g, '').replace(/\\n{3,}/g, '\\n\\n').trim();\n  if (!s) return '-';\n  if (s.length > n) s = s.slice(0, n - 3) + '...';\n  return '```\\n' + s + '\\n```';\n};\nconst nowIso = new Date().toISOString();\n\nconst stats = { queue_rows: 0, candidates: 0, embedded: 0, overflow: 0, pending_announced: 0, approved_announced: 0, skipped: '' };\nconst base = (extra) => ({ json: Object.assign({ __digest: true, has_items: false, payload: null, keys: [], stats, config_rev: cfg.rev || '', run_at: nowIso }, extra) });\n\nif (D.enabled === false) { stats.skipped = 'digest disabled by config'; return [base({})]; }\n\nconst queue = safeAll('Fetch Outreach Queue').filter(r => r && r.outreach_id);\nstats.queue_rows = queue.length;\nconst accounts = {}; for (const a of safeAll('Fetch Accounts')) if (a && a.account_id) accounts[String(a.account_id)] = a;\nconst contacts = {}; for (const c of safeAll('Fetch Contacts')) if (c && c.contact_id) contacts[String(c.contact_id)] = c;\nconst seen = new Set(safeAll('Fetch Digest Log').map(r => String(r && r.digest_key || '')).filter(Boolean));\n\nconst include = D.include_statuses.map(s => String(s).toLowerCase());\nconst cands = queue.filter(r => {\n  const st = String(r.approval_status || '').toLowerCase();\n  const sent = String(r.send_status || 'not_sent').toLowerCase();\n  return include.includes(st) && sent === 'not_sent' && !seen.has(r.outreach_id + ':' + st);\n}).map(r => {\n  const a = accounts[String(r.account_id)] || {};\n  return { r, a, c: contacts[String(r.contact_id)] || {}, st: String(r.approval_status).toLowerCase(), score: Number(a.final_score || 0) };\n});\n// approved first, then by account score\ncands.sort((x, y) => (y.st === 'approved') - (x.st === 'approved') || y.score - x.score);\nstats.candidates = cands.length;\n\nif (!cands.length) {\n  stats.skipped = 'nothing new to announce';\n  if (D.post_when_empty === true) return [base({ has_items: true, payload: { username: 'GTM Engine', content: 'GTM digest: nothing new today. Queue rows: ' + queue.length + '.', allowed_mentions: { parse: [] } } })];\n  return [base({})];\n}\n\nconst link = (D.sheet_url && D.outreach_gid) ? String(D.sheet_url).replace(/\\/edit.*$/, '') + '/edit#gid=' + D.outreach_gid : '';\nconst colorOf = s => s >= Number(D.hot_score) ? 5763719 : (s >= Number(D.warm_score) ? 16705372 : 9807270);\nconst LABEL = { approved: 'APPROVED', edited: 'EDITED', pending: 'REVIEW' };\n\n// One full card per draft. Discord limits: 1024 chars per field, 6000 chars per message.\nconst embedOf = ({ r, a, c, st, score }) => {\n  const f = [];\n  const add = (name, value, inline) => f.push({ name, value, inline: inline === true });\n  const tz = (a.timezone_utc_offset == null || a.timezone_utc_offset === '') ? '?' : ((Number(a.timezone_utc_offset) >= 0 ? '+' : '') + a.timezone_utc_offset);\n  const li = String(c.linkedin_url || '').trim();\n  const isEmail = String(r.channel || '').toLowerCase() === 'email';\n\n  // --- who and why ---\n  add('Account', orDash((a.industry || '-') + ' | ' + (a.employee_count || '?') + ' staff | UTC' + tz + ' | ' + (a.funding_stage || 'funding ?') + ' | ' + (a.domain || ''), 300));\n  add('Contact', orDash((r.contact_name || '') + ', ' + (c.title || '?') + ' | score ' + (c.contact_score || '?') + (c.email ? ' | ' + c.email + ' (' + (c.email_status || '?') + ')' : ''), 300) + (li ? '\\n' + li : ''));\n  add('Why it matches', orDash(a.why_match, 300));\n  if (String(a.tech_stack || '').trim()) add('Tech stack', orDash(a.tech_stack, 200));\n  if (String(a.clay_summary || '').trim()) add('Company summary (Clay)', orDash(a.clay_summary, 500));\n\n  // --- the strategy ---\n  add('Angle', orDash(r.angle, 200));\n  add('Trigger', orDash(r.trigger, 250));\n  add('Pain point', orDash(r.pain_point, 250));\n  add('Value proposition', orDash(r.value_proposition, 300));\n  add('Proof point', orDash(r.proof_point, 250));\n\n  // --- the text you send. The channel you will actually use comes first ---\n  const note = () => add('LinkedIn note (' + String(r.linkedin_note || '').length + '/300 chars)', block(r.linkedin_note, 1000));\n  const msg = () => {\n    if (isEmail) add('Email subject', orDash(r.email_subject, 150));\n    add(isEmail ? 'Email body' : 'Long message (after they accept, or InMail)', block(r.message_draft, 1000));\n  };\n  if (isEmail) { msg(); note(); } else { note(); msg(); }\n  add('Follow-ups', '1) ' + orDash(r.follow_up_1, 300) + '\\n2) ' + orDash(r.follow_up_2, 300) + '\\n3) ' + orDash(r.follow_up_3, 300));\n\n  add('Risk flags', orDash(r.risk_notes, 400));\n\n  return {\n    title: cut((LABEL[st] || 'REVIEW') + ' | ' + (a.company_name || r.company_name) + ' | ' + score, 250),\n    // Deep link to this draft's row: lands on linkedin_note (T), risk_notes (U), approval_status (V)\n    url: link ? link + (Number(r.row_number) > 1 ? '&range=T' + r.row_number + ':V' + r.row_number : '') : undefined,\n    description: cut('Status: ' + st + ' | Channel: ' + (r.channel || '-') + ' | Provider: ' + (r.llm_provider || '-') + ' | Drafted: ' + String(r.run_date || '').slice(0, 10), 300),\n    color: colorOf(score), fields: f,\n    // The footer is the dedupe key. Expand Keys reads it back from Discord's reply, so do not change its shape.\n    footer: { text: cut(r.outreach_id + ':' + st, 200) }\n  };\n};\nconst size = e => (e.title || '').length + (e.description || '').length + (e.footer ? e.footer.text.length : 0) + e.fields.reduce((s, x) => s + x.name.length + x.value.length, 0);\n\nconst maxCards = Math.min(10, Math.max(1, Number(D.max_embeds || 8)));\nconst picked = cands.slice(0, maxCards);\nstats.embedded = picked.length;\nstats.overflow = cands.length - picked.length;\nstats.pending_announced = picked.filter(k => k.st !== 'approved').length;\nstats.approved_announced = picked.filter(k => k.st === 'approved').length;\n\nconst header = '**GTM digest** | ' + stats.pending_announced + ' to review, ' + stats.approved_announced + ' approved (send manually). Nothing is sent automatically.' +\n  (stats.overflow ? ' ' + stats.overflow + ' more will appear in the next digest.' : '');\n\n// One Discord message per draft, so a full card never hits the 6000-char message limit.\nreturn picked.map((cnd, i) => {\n  const e = embedOf(cnd);\n  // Safety net: if a card is still too big, shorten the long message first.\n  let guard = 0;\n  while (size(e) > 5600 && guard++ < 5) {\n    const big = e.fields.slice().sort((x, y) => y.value.length - x.value.length)[0];\n    big.value = big.value.slice(0, Math.max(200, big.value.length - 400)).replace(/`+$/, '') + (big.value.startsWith('```') ? '...\\n```' : '...');\n  }\n  const content = (i === 0 ? header + '\\n' : '') + '**' + (i + 1) + '/' + picked.length + '** ' + cut(cnd.r.contact_name + ' at ' + (cnd.a.company_name || cnd.r.company_name), 150);\n  return base({\n    has_items: true,\n    keys: [{ digest_key: cnd.r.outreach_id + ':' + cnd.st, outreach_id: cnd.r.outreach_id, status: cnd.st, announced_at: nowIso }],\n    payload: { username: 'GTM Engine', content: content.slice(0, 1900), embeds: [e], allowed_mentions: { parse: [] } }\n  });\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        -32
+      ],
+      "id": "6f84e6c7-58e1-498e-a849-2afc3ef3a924",
+      "name": "Build Digest"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "07e77a8e-7a4a-4377-9ccd-c8bfe23f9de8",
+              "leftValue": "={{ $json.has_items }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1568,
+        -32
+      ],
+      "id": "1e282df6-85a8-4a6d-9adf-bdca94cfc969",
+      "name": "Has Items"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.DISCORD_DIGEST_WEBHOOK_URL }}?wait=true",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 1200
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1792,
+        -96
+      ],
+      "id": "4c1608c3-4d7f-4154-b15d-5393bbe0b821",
+      "name": "Post Digest to Discord",
+      "retryOnFail": true,
+      "waitBetweenTries": 2000,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Reads the dedupe key back from each message Discord accepted (the embed footer).\n// Only drafts that were really posted are remembered, so a failed post is retried next run.\nconst seen = new Set();\nconst out = [];\nconst now = new Date().toISOString();\nfor (const it of $input.all()) {\n  for (const e of (((it.json || {}).embeds) || [])) {\n    const key = String((e.footer || {}).text || '').trim();\n    const m = key.match(/^(.+):([a-z_]+)$/);\n    if (!m || seen.has(key)) continue;\n    seen.add(key);\n    out.push({ json: { digest_key: key, outreach_id: m[1], status: m[2], announced_at: now } });\n  }\n}\nif (out.length) return out;\n// Fallback if Discord's reply had no embeds: use the keys Build Digest prepared.\nreturn $('Build Digest').all().flatMap(i => ((i.json || {}).keys || []).map(k => ({ json: k })));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2016,
+        -176
+      ],
+      "id": "c88e551d-e485-4577-83e4-4b7d05969172",
+      "name": "Expand Keys"
+    },
+    {
+      "parameters": {
+        "dataTableId": {
+          "__rl": true,
+          "value": "YOUR_DIGEST_LOG_TABLE_ID",
+          "mode": "list",
+          "cachedResultName": "digest_log",
+          "cachedResultUrl": ""
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "digest_key": "={{ $json.digest_key }}",
+            "outreach_id": "={{ $json.outreach_id }}",
+            "status": "={{ $json.status }}",
+            "announced_at": "={{ $json.announced_at }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "digest_key",
+              "displayName": "digest_key",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "outreach_id",
+              "displayName": "outreach_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "announced_at",
+              "displayName": "announced_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        2240,
+        -176
+      ],
+      "id": "8520128b-40bd-46c6-87e7-efcdf4e8c2c1",
+      "name": "Remember Digest Key"
+    },
+    {
+      "parameters": {
+        "jsCode": "const b = (() => { try { return $('Build Digest').first().json; } catch (e) { return {}; } })();\nconst s = b.stats || {};\nconst first = ($input.first() || { json: {} }).json || {};\nlet status = 'quiet';\nlet err = '';\nif (b.has_items) {\n  if (first.digest_key) status = 'sent';\n  else {\n    status = 'failed';\n    const e = first.error;\n    const msg = typeof e === 'string' ? e : ((e && (e.message || e.description)) || first.message || 'discord post failed');\n    err = String(msg).slice(0, 200);\n  }\n}\nif (!b.has_items && s.skipped) err = s.skipped;\nreturn [{ json: {\n  run_at: b.run_at || new Date().toISOString(),\n  config_rev: b.config_rev || '',\n  queue_rows: s.queue_rows || 0,\n  candidates: s.candidates || 0,\n  embedded: s.embedded || 0,\n  overflow: s.overflow || 0,\n  pending_announced: s.pending_announced || 0,\n  approved_announced: s.approved_announced || 0,\n  discord_status: status,\n  error_sample: err\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2464,
+        -32
+      ],
+      "id": "3dafd406-d3b3-44a3-b73e-41f53d22c987",
+      "name": "Digest Stats"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_SPREADSHEET_ID",
+          "mode": "list",
+          "cachedResultName": "personal-gtm-engine",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 835422581,
+          "mode": "list",
+          "cachedResultName": "digest_ops",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit#gid=835422581"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "run_at",
+              "displayName": "run_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "config_rev",
+              "displayName": "config_rev",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "queue_rows",
+              "displayName": "queue_rows",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "candidates",
+              "displayName": "candidates",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "embedded",
+              "displayName": "embedded",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "overflow",
+              "displayName": "overflow",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "pending_announced",
+              "displayName": "pending_announced",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "approved_announced",
+              "displayName": "approved_announced",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "discord_status",
+              "displayName": "discord_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "error_sample",
+              "displayName": "error_sample",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2688,
+        -32
+      ],
+      "id": "1aa1480e-5e19-4355-bd68-a96ae75f9793",
+      "name": "Append Digest Ops",
+      "credentials": {
+        "googleApi": {
+          "name": "Google Service Account account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Config": {
+      "main": [
+        [
+          {
+            "node": "Fetch Outreach Queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Outreach Queue": {
+      "main": [
+        [
+          {
+            "node": "Fetch Accounts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Accounts": {
+      "main": [
+        [
+          {
+            "node": "Fetch Contacts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Contacts": {
+      "main": [
+        [
+          {
+            "node": "Fetch Digest Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Digest Log": {
+      "main": [
+        [
+          {
+            "node": "Build Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Digest": {
+      "main": [
+        [
+          {
+            "node": "Has Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Items": {
+      "main": [
+        [
+          {
+            "node": "Post Digest to Discord",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Digest Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Digest Stats": {
+      "main": [
+        [
+          {
+            "node": "Append Digest Ops",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post Digest to Discord": {
+      "main": [
+        [
+          {
+            "node": "Expand Keys",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Digest Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expand Keys": {
+      "main": [
+        [
+          {
+            "node": "Remember Digest Key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remember Digest Key": {
+      "main": [
+        [
+          {
+            "node": "Digest Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false,
+    "timezone": "Africa/Tunis"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "nodeGroups": [],
+  "tags": []
+}

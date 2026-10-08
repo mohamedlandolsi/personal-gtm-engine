@@ -1,0 +1,329 @@
+{
+  "rev": "personal-gtm-sprint7-quality2",
+  "enabled": true,
+  "max_companies_per_run": 25,
+  "min_account_score": 60,
+  "priority_score": 80,
+  "allow_agencies": true,
+  "allow_startups": true,
+  "allow_smb": true,
+  "allow_enterprise": false,
+  "timezone": {
+    "allowed_utc_offsets": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "allow_unknown_timezone": true
+  },
+  "company": {
+    "employee_min": 2,
+    "employee_max": 150,
+    "must_have_domain": true,
+    "industries_include": [
+      "b2b saas",
+      "software",
+      "fintech",
+      "healthtech",
+      "fitness tech",
+      "marketing agency",
+      "sales agency",
+      "revops consulting",
+      "gtm consulting",
+      "marketing automation",
+      "ai software"
+    ],
+    "industries_exclude": [
+      "recruiting",
+      "staffing",
+      "adult",
+      "gambling",
+      "crypto trading",
+      "mlm",
+      "dating",
+      "political campaigns"
+    ],
+    "keywords_include": [
+      "automation",
+      "integration",
+      "revops",
+      "gtm",
+      "sales operations",
+      "marketing operations",
+      "crm",
+      "hubspot",
+      "salesforce",
+      "clay",
+      "n8n",
+      "make.com",
+      "zapier",
+      "lead generation",
+      "demand generation",
+      "b2b",
+      "saas",
+      "ai workflows"
+    ],
+    "keywords_exclude": [
+      "german required",
+      "french required",
+      "fluent german",
+      "fluent french",
+      "must be based in usa",
+      "security clearance",
+      "workflow engine",
+      "n8n alternative",
+      "zapier alternative"
+    ]
+  },
+  "scoring": {
+    "weights": {
+      "icp_fit": 0.35,
+      "budget_proxy": 0.25,
+      "automation_need": 0.25,
+      "timezone_fit": 0.15
+    },
+    "vertical_boost": {
+      "enabled": true,
+      "bonus": 5,
+      "keywords": [
+        "fitness",
+        "health",
+        "wellness",
+        "gym",
+        "training",
+        "hypertrophy",
+        "sports tech"
+      ]
+    }
+  },
+  "enrichment": {
+    "enabled": true,
+    "max_rows_per_run": 15,
+    "timeout_ms": 8000,
+    "politeness_ms": 800
+  },
+  "clay": {
+    "enabled": true,
+    "max_rows_per_run": 6,
+    "min_score_for_clay": 65
+  },
+  "contact": {
+    "max_accounts_per_run": 10,
+    "max_contacts_per_company": 3,
+    "min_contact_score": 60,
+    "min_account_score": 65,
+    "require_email_or_linkedin": true,
+    "prefer_founder_for_small_teams": true,
+    "small_team_threshold": 50,
+    "roles_exclude": [
+      "recruiter",
+      "talent acquisition",
+      "hr",
+      "people ops",
+      "intern"
+    ],
+    "generic_email_prefixes": [
+      "jobs@",
+      "careers@",
+      "info@",
+      "contact@",
+      "hello@",
+      "support@",
+      "press@",
+      "office@"
+    ]
+  },
+  "clay_contacts": {
+    "enabled": true,
+    "max_rows_per_run": 6
+  },
+  "contact_finder": {
+    "enabled": true,
+    "max_accounts_per_run": 10,
+    "max_results": 8,
+    "search_depth": "basic",
+    "restrict_to_linkedin": true
+  },
+  "outreach": {
+    "enabled": true,
+    "sender_name": "YOUR_FIRST_NAME",
+    "min_account_score": 65,
+    "min_contact_score": 70,
+    "max_pairs_per_run": 8,
+    "max_per_day": 10,
+    "max_contacts_per_account": 1,
+    "allow_guessed_email_channel": false,
+    "email_verified_statuses": [
+      "verified",
+      "valid"
+    ],
+    "tone": "direct, concise, evidence-first",
+    "cta": "Open to a 2-minute workflow example relevant to your stack?",
+    "words": {
+      "min": 70,
+      "max": 120
+    },
+    "proof_points": [
+      "Built a federated B2B GTM SaaS platform with FastAPI, Supabase and LLM routing",
+      "Built an n8n engine with multi-source ingestion, fallback routers, explainable scoring and dedupe ledgers",
+      "Can build Clay/n8n/Apollo/HubSpot workflows for enrichment, scoring and outreach ops"
+    ],
+    "site_facts": {
+      "enabled": true,
+      "timeout_ms": 8000
+    },
+    "llm": {
+      "enabled": true,
+      "chain": [
+        "groq",
+        "groq:qwen/qwen3.8-27b",
+        "groq:openai/gpt-oss-20b",
+        "gemini:gemini-3.5-flash-lite",
+        "template"
+      ],
+      "timeout_ms": 40000,
+      "temperature": 0.3,
+      "politeness_ms": 6000,
+      "max_output_tokens": 1500,
+      "max_wait_s": 20,
+      "groq_model": "openai/gpt-oss-120b",
+      "gemini_model": "gemini-3.8-flash"
+    }
+  },
+  "digest": {
+    "enabled": true,
+    "hot_score": 80,
+    "warm_score": 65,
+    "max_embeds": 8,
+    "post_when_empty": false,
+    "include_statuses": [
+      "pending",
+      "approved",
+      "edited"
+    ],
+    "sheet_url": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit",
+    "outreach_gid": "YOUR_OUTREACH_QUEUE_TAB_GID"
+  },
+  "sources": {
+    "apollo": {
+      "enabled": false,
+      "endpoint": "https://api.apollo.io/api/v1/mixed_companies/search",
+      "per_page": 25,
+      "max_credits_per_run": 3,
+      "max_companies_per_run": 75,
+      "queries": [
+        {
+          "label": "eu b2b marketing agencies",
+          "keyword_tags": [
+            "b2b lead generation",
+            "marketing automation"
+          ],
+          "employee_ranges": [
+            "11,50",
+            "51,100"
+          ],
+          "locations": [
+            "united kingdom",
+            "netherlands",
+            "germany",
+            "spain",
+            "portugal",
+            "ireland"
+          ],
+          "industry_label": "marketing agency",
+          "company_type": "agency",
+          "page": 1
+        },
+        {
+          "label": "eu revops consultancies",
+          "keyword_tags": [
+            "revops",
+            "hubspot partner",
+            "crm implementation"
+          ],
+          "employee_ranges": [
+            "1,10",
+            "11,50"
+          ],
+          "locations": [
+            "united kingdom",
+            "netherlands",
+            "germany",
+            "france",
+            "sweden",
+            "denmark"
+          ],
+          "industry_label": "revops consulting",
+          "company_type": "agency",
+          "page": 1
+        },
+        {
+          "label": "eu sales tech startups",
+          "keyword_tags": [
+            "sales engagement",
+            "sales automation",
+            "b2b saas"
+          ],
+          "employee_ranges": [
+            "11,50",
+            "51,100"
+          ],
+          "locations": [
+            "united kingdom",
+            "germany",
+            "france",
+            "netherlands",
+            "spain",
+            "estonia"
+          ],
+          "industry_label": "b2b saas",
+          "company_type": "startup",
+          "page": 1
+        }
+      ]
+    },
+    "hn_hiring": {
+      "enabled": true,
+      "max_companies_per_run": 400,
+      "threads": 2,
+      "strong_keywords": [
+        "revops",
+        "revenue operations",
+        "gtm",
+        "go-to-market",
+        "sales operations",
+        "sales ops",
+        "marketing operations",
+        "marketing ops",
+        "crm",
+        "hubspot",
+        "salesforce",
+        "pipedrive",
+        "clay",
+        "n8n",
+        "zapier",
+        "make.com",
+        "lead generation",
+        "demand generation",
+        "outbound",
+        "marketing automation",
+        "sales automation",
+        "workflow automation"
+      ],
+      "extra_noise_hosts": []
+    },
+    "yc_directory": {
+      "enabled": true,
+      "max_companies_per_run": 300,
+      "tags": [
+        "sales",
+        "marketing",
+        "crm",
+        "sales-enablement",
+        "workflow-automation"
+      ]
+    }
+  }
+}

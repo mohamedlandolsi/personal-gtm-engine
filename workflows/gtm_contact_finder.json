@@ -1,0 +1,612 @@
+{
+  "name": "GTM Contact Finder",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        704,
+        -208
+      ],
+      "id": "a4d413b5-91a8-4738-80df-e9ae6034b4c1",
+      "name": "Manual Trigger"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit?usp=sharing",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "config",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit#gid=0"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        928,
+        -208
+      ],
+      "id": "0efc5ffc-898a-4389-9c94-f97dc2cd4203",
+      "name": "Fetch Config",
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleApi": {
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_SPREADSHEET_ID",
+          "mode": "list",
+          "cachedResultName": "personal-gtm-engine",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 532273732,
+          "mode": "list",
+          "cachedResultName": "contacts_queue",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit#gid=532273732"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1152,
+        -208
+      ],
+      "id": "2f9b6ba8-f6d3-49a4-9820-818bb477a3ed",
+      "name": "Fetch Contacts Queue",
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleApi": {
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_SPREADSHEET_ID",
+          "mode": "list",
+          "cachedResultName": "personal-gtm-engine",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1662961889,
+          "mode": "list",
+          "cachedResultName": "contact_results",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit#gid=1662961889"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1376,
+        -208
+      ],
+      "id": "0f3dbc36-ecee-409d-b5b7-0ef45d02d8a6",
+      "name": "Fetch Contact Results",
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleApi": {
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const safeAll = (name) => { try { return $(name).all().map(i => i.json); } catch (e) { return []; } };\n\n// Optional config block: config.contact_finder. Safe defaults if it is missing.\nlet cfg = {};\ntry { cfg = JSON.parse((safeAll('Fetch Config').find(r => r && r.key === 'config_json') || {}).value || '{}'); } catch (e) { cfg = {}; }\nconst F = Object.assign({ enabled: true, max_accounts_per_run: 3, max_results: 8, search_depth: 'basic', yc_lookup: true }, cfg.contact_finder || {});\n\nif (F.enabled === false) return [{ json: { __skipped: 'contact_finder disabled by config' } }];\n\nconst norm = (d) => String(d || '').toLowerCase().trim().replace(/^www\\./, '');\n\n// Any domain already in contact_results (people or a no-result marker) is never searched again\nconst done = new Set(safeAll('Fetch Contact Results').map(r => norm(r.domain)).filter(d => d && d !== '__placeholder__'));\n\n// Account facts used to check that a person really belongs to THIS company\nconst acct = {};\nfor (const a of safeAll('Fetch Accounts')) if (a && a.domain) acct[norm(a.domain)] = a;\n\nconst queue = safeAll('Fetch Contacts Queue').filter(r => r && r.domain && r.account_id);\nconst seen = new Set();\nconst todo = [];\nfor (const r of queue) {\n  const d = norm(r.domain);\n  if (!d || done.has(d) || seen.has(d)) continue;\n  if (String((acct[d] || {}).status || '').toLowerCase() === 'rejected') continue;   // you rejected this account\n  seen.add(d);\n  todo.push(r);\n}\n\nconst cap = Math.max(1, Math.min(10, Number(F.max_accounts_per_run || 3)));   // at most 1 Tavily credit per account\nconst batch = todo.slice(0, cap);\n\nif (!batch.length) return [{ json: { __skipped: 'contact_finder: nothing to look up', queue_rows: queue.length, already_done: done.size } }];\n\nconst slugify = s => String(s || '').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');\n\nreturn batch.map(r => {\n  const d = norm(r.domain);\n  const a = acct[d] || {};\n  const rawName = String(r.company_name || '').trim();\n  // HN accounts carry the domain as their name. Use the first label instead (\"goareo.com\" -> \"goareo\").\n  const company = (!rawName || /\\.[a-z]{2,}$/i.test(rawName)) ? d.split('.')[0] : rawName;\n  const loc = String(a.location_raw || '').split(';')[0];\n  const city = /remote/i.test(loc) ? '' : loc.split(',')[0].trim();\n  // Guesses for the company's Y Combinator page name. A guess only counts if that page lists this exact website.\n  const s1 = slugify(company), s2 = d.split('.')[0];\n  const ycSlugs = F.yc_lookup === false ? [] : Array.from(new Set([s1, s2, s1.replace(/-/g, '')].filter(Boolean)));\n  return {\n    json: {\n      domain: d,\n      account_id: String(r.account_id),\n      company,\n      source: String(a.source || ''),\n      country: String(a.country || '').trim(),\n      city,\n      yc_slugs: ycSlugs,\n      // Plain-language query. Tavily is a semantic search, so quotes and OR operators return nothing.\n      query: company + ' founder CEO co-founder head of sales LinkedIn profile',\n      max_results: Math.max(3, Math.min(20, Number(F.max_results || 8))),\n      search_depth: F.search_depth === 'advanced' ? 'advanced' : 'basic',\n      include_domains: F.restrict_to_linkedin === false ? [] : ['linkedin.com']\n    }\n  };\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1824,
+        -208
+      ],
+      "id": "a3f048d1-e33e-4729-a710-ac6b88523611",
+      "name": "Select Lookups"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "cba74e1e-613e-4c09-8e3f-b8d38d03c203",
+              "leftValue": "={{ $json.query }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        2272,
+        -208
+      ],
+      "id": "452d7ad4-9eec-4c7c-8f93-4cc87ee7cf5a",
+      "name": "Has Query"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.tavily.com/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ query: $json.query, search_depth: $json.search_depth, max_results: $json.max_results, include_domains: $json.include_domains }) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 1200
+            }
+          },
+          "timeout": 20000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2496,
+        -208
+      ],
+      "id": "9b74cdd4-ac88-48f9-9a00-438863024383",
+      "name": "Tavily Search",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "Tavily Header Auth"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const safeAll = (name) => { try { return $(name).all().map(i => i.json); } catch (e) { return []; } };\n\n// Only the lookups that the YC step could not answer reach the search, in this order.\nconst lookups = safeAll('YC Founders').filter(l => l && l.query && l.domain);\nconst MAX_PER_COMPANY = 3;\nconst nowIso = new Date().toISOString();\nconst C = { lookups: lookups.length, responses: 0, empty: 0, results: 0, not_profile: 0, wrong_company: 0, wrong_location: 0, no_role: 0, dup: 0, kept: 0, kept_unverified: 0, no_result_accounts: 0, credits: 0 };\n\nconst esc = (s) => String(s).replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');\nconst hasWord = (text, w) => new RegExp('(^|[^a-z0-9])' + esc(String(w).toLowerCase()) + '([^a-z0-9]|$)').test(String(text).toLowerCase());\n\n// Roles worth contacting, best first. Only these are written.\nconst ROLE_RE = [\n  /\\b(?:co-?founder|founder|founding partner)\\b(?:\\s*(?:&|and|,|\\/)\\s*(?:ceo|cto|coo|cro|cmo|managing director))?/i,\n  /\\b(?:ceo|chief executive officer|managing director|managing partner|owner)\\b/i,\n  /\\b(?:chief revenue officer|cro|head of rev(?:enue)? ?ops|revops (?:lead|manager)|revenue operations (?:lead|manager|director)|head of revenue operations)\\b/i,\n  /\\b(?:head of sales|vp (?:of )?sales|sales director|director of sales|head of growth|growth lead|head of marketing|cmo|head of operations|cto|chief technology officer)\\b/i,\n  /\\b(?:sales operations|marketing operations|gtm|go-to-market)\\b[a-z ]{0,20}(?:lead|manager|director|engineer)?/i\n];\nfunction findRole(text) {\n  const t = String(text || '');\n  for (let i = 0; i < ROLE_RE.length; i++) { const m = t.match(ROLE_RE[i]); if (m) return { role: m[0].replace(/\\s+/g, ' ').trim(), rank: i }; }\n  return null;\n}\n\nfunction cleanUrl(u) {\n  const m = String(u || '').match(/^https?:\\/\\/([a-z]{2,3}\\.)?linkedin\\.com\\/in\\/([^/?#]+)/i);\n  return m ? 'https://www.linkedin.com/in/' + m[2].toLowerCase() : '';\n}\n\n// ---- location check: a company name alone is not proof, many companies share a name ----\nconst ALIASES = {\n  'united kingdom': ['united kingdom', 'england', 'scotland', 'wales', 'london', 'manchester', ' uk'],\n  'united states': ['united states', 'usa', 'california', 'new york', 'san francisco', 'texas', 'boston', 'seattle', 'chicago', 'los angeles', 'florida', 'colorado', 'utah', 'washington'],\n  'france': ['france', 'paris', 'lyon'], 'germany': ['germany', 'berlin', 'munich', 'hamburg', 'deutschland'],\n  'netherlands': ['netherlands', 'amsterdam', 'rotterdam'], 'spain': ['spain', 'madrid', 'barcelona'],\n  'portugal': ['portugal', 'lisbon', 'porto'], 'ireland': ['ireland', 'dublin'], 'sweden': ['sweden', 'stockholm'],\n  'denmark': ['denmark', 'copenhagen'], 'switzerland': ['switzerland', 'zurich', 'geneva'], 'austria': ['austria', 'vienna'],\n  'italy': ['italy', 'milan', 'rome'], 'belgium': ['belgium', 'brussels'], 'poland': ['poland', 'warsaw'],\n  'estonia': ['estonia', 'tallinn'], 'united arab emirates': ['united arab emirates', 'dubai'],\n  'canada': ['canada', 'toronto', 'vancouver'], 'india': ['india', 'bangalore', 'bengaluru', 'mumbai'],\n  'australia': ['australia', 'sydney', 'melbourne'], 'singapore': ['singapore'], 'israel': ['israel', 'tel aviv'], 'brazil': ['brazil']\n};\n// 'match' = the profile mentions the company's country or city. 'mismatch' = it mentions another country and not ours.\n// 'unknown' = no location on either side.\nfunction locationCheck(l, text) {\n  const t = ' ' + String(text || '').toLowerCase() + ' ';\n  const country = String(l.country || '').toLowerCase().trim();\n  const city = String(l.city || '').toLowerCase().trim();\n  const mine = (ALIASES[country] || (country ? [country] : [])).concat(city.length >= 3 ? [city] : []);\n  if (!mine.length) return 'unknown';\n  if (mine.some(w => t.includes(w))) return 'match';\n  for (const k of Object.keys(ALIASES)) { if (k !== country && ALIASES[k].some(w => t.includes(w))) return 'mismatch'; }\n  return 'unknown';\n}\n\nconst rows = [];\nconst answered = new Set();\n\nconst inputs = $input.all();\nfor (let i = 0; i < inputs.length; i++) {\n  const res = inputs[i].json || {};\n  // Match a response to its account by position. Tavily rewrites the query it echoes back, so text matching is unsafe.\n  const l = inputs.length === lookups.length\n    ? lookups[i]\n    : lookups.find(x => String(res.query || '').toLowerCase().startsWith(String(x.company).toLowerCase() + ' '));\n  if (!l || !Array.isArray(res.results)) continue;       // failed request: no row, so it retries next run\n  C.responses++;\n  C.credits += Number((res.usage || {}).credits || 1);\n  // Zero results is a search problem, not a \"nobody works there\" answer. No marker, so it retries next run.\n  if (!res.results.length) { C.empty++; continue; }\n  answered.add(l.domain);\n\n  const people = [];\n  const seenUrl = new Set();\n  for (const r of res.results) {\n    C.results++;\n    const url = cleanUrl(r.url);\n    if (!url) { C.not_profile++; continue; }\n    if (seenUrl.has(url)) { C.dup++; continue; }\n\n    const title = String(r.title || '').replace(/\\s*\\|\\s*LinkedIn.*$/i, '').trim();\n    const content = String(r.content || '').replace(/[ \\t]+/g, ' ').trim();   // keep line breaks\n\n    // Company gate: the company must be in the profile title, or be a CURRENT job in the snippet (\"at Crono (Jul 2022 to present)\").\n    const co = esc(String(l.company).toLowerCase());\n    const currentJob = new RegExp('(?:\\\\bat|@)\\\\s+' + co + '\\\\s*\\\\([^)\\\\n]{0,40}present', 'i').test(content);\n    if (!hasWord(title, l.company) && !currentJob) { C.wrong_company++; continue; }\n\n    // Location gate. A profile that mentions the company's own domain is accepted outright.\n    const mentionsDomain = (title + ' ' + content).toLowerCase().includes(l.domain);\n    const loc = mentionsDomain ? 'match' : locationCheck(l, title + ' ' + content);\n    if (loc === 'mismatch') { C.wrong_location++; continue; }\n\n    const parts = title.split(/\\s+[-–—]\\s+/).map(s => s.trim()).filter(Boolean);\n    const name = (parts[0] || '').replace(/\\s*\\(.*?\\)\\s*/g, ' ').replace(/,.*$/, '').trim();\n    if (!name || name.split(' ').length < 2 || name.length > 60) { C.not_profile++; continue; }\n\n    // Role: from the title's middle part first, then from the snippet near the company name\n    const hit = findRole(parts.slice(1).join(' - ')) || findRole(content.slice(0, 300));\n    if (!hit) { C.no_role++; continue; }\n\n    seenUrl.add(url);\n    people.push({ name, title: hit.role, rank: hit.rank, url, score: Number(r.score || 0), verified: loc === 'match' });\n  }\n\n  // Location-confirmed people first, then by role, then by search score\n  people.sort((a, b) => (b.verified - a.verified) || a.rank - b.rank || b.score - a.score);\n  const keep = people.slice(0, MAX_PER_COMPANY);\n\n  if (!keep.length) {\n    C.no_result_accounts++;\n    // Marker row: stops this account being searched again. Empty full_name means the main workflow ignores it.\n    rows.push({ json: { domain: l.domain, account_id: l.account_id, full_name: '', title: 'NO_RESULT', email: '', email_status: 'not_found',\n      person_linkedin: '', provider: 'tavily_search', credits_used: 1, enriched_at: nowIso } });\n    continue;\n  }\n  for (const p of keep) {\n    C.kept++; if (!p.verified) C.kept_unverified++;\n    // \"tavily_unverified\" = the name matched but nothing confirmed it is this company. It is flagged on the draft.\n    rows.push({ json: { domain: l.domain, account_id: l.account_id, full_name: p.name, title: p.title, email: '', email_status: 'not_found',\n      person_linkedin: p.url, provider: p.verified ? 'tavily_search' : 'tavily_unverified', credits_used: Number((1 / keep.length).toFixed(2)), enriched_at: nowIso } });\n  }\n}\n\nconst failed = lookups.filter(l => !answered.has(l.domain)).map(l => l.domain);\nconst note = 'finder stats: lookups=' + C.lookups + ' responses=' + C.responses + ' credits=' + C.credits + ' empty=' + C.empty + ' results=' + C.results +\n  ' not_profile=' + C.not_profile + ' wrong_company=' + C.wrong_company + ' wrong_location=' + C.wrong_location + ' no_role=' + C.no_role +\n  ' kept=' + C.kept + ' kept_unverified=' + C.kept_unverified + ' no_result_accounts=' + C.no_result_accounts + (failed.length ? ' retry_next_run=' + failed.join(',') : '');\n\n// The stats item goes last. The Filter node after this one keeps only rows with a domain.\nreturn rows.concat([{ json: { __stats: note } }]);\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2720,
+        -208
+      ],
+      "id": "881dd1ba-6772-4a84-868c-77de8ab2002d",
+      "name": "Parse People"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "1bc89c3d-e9fc-433b-9a11-edf5e2263781",
+              "leftValue": "={{ $json.domain }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        2944,
+        -208
+      ],
+      "id": "415a60c1-99c5-4132-86a5-e3a97d9efe8c",
+      "name": "Only Rows"
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_SPREADSHEET_ID",
+          "mode": "list",
+          "cachedResultName": "personal-gtm-engine",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1662961889,
+          "mode": "list",
+          "cachedResultName": "contact_results",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit#gid=1662961889"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "domain",
+              "displayName": "domain",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "account_id",
+              "displayName": "account_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "full_name",
+              "displayName": "full_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "title",
+              "displayName": "title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email_status",
+              "displayName": "email_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "person_linkedin",
+              "displayName": "person_linkedin",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "provider",
+              "displayName": "provider",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "credits_used",
+              "displayName": "credits_used",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "enriched_at",
+              "displayName": "enriched_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        3168,
+        -208
+      ],
+      "id": "f6f0b92f-4fad-4427-8700-deb1b8b940ce",
+      "name": "Append Contact Results",
+      "credentials": {
+        "googleApi": {
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_SPREADSHEET_ID",
+          "mode": "list",
+          "cachedResultName": "personal-gtm-engine",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 17930613,
+          "mode": "list",
+          "cachedResultName": "accounts",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit#gid=17930613"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1600,
+        -208
+      ],
+      "id": "8f7b6657-9a03-456c-8924-a3f5d5d6f6de",
+      "name": "Fetch Accounts",
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleApi": {
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// For each lookup, try the company's public Y Combinator page first. It lists the founders by name with their\n// LinkedIn links, so there is no guessing. Free, no key. Anything not found here continues to the Tavily search.\nconst lookups = $input.all().map(i => i.json).filter(l => l && l.query && l.domain);\nif (!lookups.length) return $input.all();   // pass skip markers through untouched\n\nconst MAX_FOUNDERS = 3;\nconst nowIso = new Date().toISOString();\nconst sleep = ms => new Promise(r => setTimeout(r, ms));\nconst C = { lookups: lookups.length, yc_found: 0, yc_people: 0, not_on_yc: 0, wrong_site: 0, no_linkedin: 0, to_search: 0, requests: 0, errors: 0 };\n\nconst normDomain = (raw) => String(raw || '').trim().toLowerCase().replace(/^https?:\\/\\//, '').replace(/^www\\./, '').split(/[\\/?#]/)[0];\nconst decodeAttr = s => String(s).replace(/&quot;/g, '\"').replace(/&#0?39;|&#x27;|&apos;/gi, \"'\").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');\nconst liUrl = u => {\n  const m = String(u || '').match(/linkedin\\.com\\/in\\/([^\\/?#\\s]+)/i);\n  if (!m) return '';\n  let slug = m[1]; try { slug = decodeURIComponent(slug); } catch (e) { /* keep as is */ }\n  return 'https://www.linkedin.com/in/' + slug.toLowerCase();\n};\n// The page embeds its data as JSON in a data-page attribute: props.company.founders[]\nconst parseYc = (html) => {\n  const m = String(html || '').match(/data-page=\"([^\"]+)\"/);\n  if (!m) return null;\n  let j; try { j = JSON.parse(decodeAttr(m[1])); } catch (e) { return null; }\n  const c = ((j || {}).props || {}).company;\n  if (!c || !Array.isArray(c.founders)) return null;\n  return { website: normDomain(c.website), founders: c.founders };\n};\n\nconst getPage = async (slug) => {\n  C.requests++;\n  try {\n    const res = await this.helpers.httpRequest({ method: 'GET', url: 'https://www.ycombinator.com/companies/' + encodeURIComponent(slug),\n      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; personal-gtm-engine/3.0; contact research)', 'Accept': 'text/html' },\n      json: false, timeout: 15000, returnFullResponse: true, ignoreHttpStatusErrors: true });\n    if (res && typeof res === 'object' && 'body' in res) return { status: Number(res.statusCode || res.status || 0), html: typeof res.body === 'string' ? res.body : '' };\n    return { status: 200, html: typeof res === 'string' ? res : '' };\n  } catch (e) {\n    const m = String((e && e.message) || e).match(/status code (\\d{3})/i);\n    if (!m) C.errors++;\n    return { status: m ? Number(m[1]) : 0, html: '' };\n  }\n};\n\nconst out = [];\nlet first = true;\nfor (const l of lookups) {\n  let page = null, sawOther = false;\n  for (const slug of (Array.isArray(l.yc_slugs) ? l.yc_slugs : [])) {\n    if (!first) await sleep(500);\n    first = false;\n    const r = await getPage(slug);\n    if (r.status !== 200) continue;\n    const p = parseYc(r.html);\n    if (!p) continue;\n    if (p.website === l.domain) { page = p; break; }\n    sawOther = true;    // a different company with the same name: ignore it\n  }\n\n  if (!page) {\n    if (sawOther) C.wrong_site++; else C.not_on_yc++;\n    C.to_search++;\n    out.push({ json: l });           // still has \"query\", so it goes to the Tavily search\n    continue;\n  }\n\n  const people = page.founders\n    .filter(f => f && f.is_active !== false && String(f.full_name || '').trim())\n    .map(f => ({ name: String(f.full_name).trim(), title: String(f.title || '').trim() || 'Founder', url: liUrl(f.linkedin_url) }));\n  const usable = people.filter(p => p.url).slice(0, MAX_FOUNDERS);\n  C.no_linkedin += people.length - people.filter(p => p.url).length;\n\n  if (!usable.length) { C.to_search++; out.push({ json: l }); continue; }\n\n  C.yc_found++;\n  for (const p of usable) {\n    C.yc_people++;\n    out.push({ json: { domain: l.domain, account_id: l.account_id, full_name: p.name, title: p.title, email: '', email_status: 'not_found',\n      person_linkedin: p.url, provider: 'yc_directory', credits_used: 0, enriched_at: nowIso } });\n  }\n}\n\nconst note = 'yc founders: lookups=' + C.lookups + ' found_on_yc=' + C.yc_found + ' people=' + C.yc_people + ' not_on_yc=' + C.not_on_yc +\n  ' same_name_other_company=' + C.wrong_site + ' founder_without_linkedin=' + C.no_linkedin + ' sent_to_search=' + C.to_search +\n  ' page_requests=' + C.requests + ' errors=' + C.errors;\nreturn out.concat([{ json: { __stats: note } }]);\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2048,
+        -208
+      ],
+      "id": "e10a4f8a-9fbb-4b3a-9921-08fbe56512aa",
+      "name": "YC Founders"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "e5457232-df9c-4201-a833-e8eef6163dd5",
+              "leftValue": "={{ $json.provider }}",
+              "rightValue": "yc_directory",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        2272,
+        0
+      ],
+      "id": "11e6d376-177d-4d20-9a2f-7971449b6b81",
+      "name": "YC Rows"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Config": {
+      "main": [
+        [
+          {
+            "node": "Fetch Contacts Queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Contacts Queue": {
+      "main": [
+        [
+          {
+            "node": "Fetch Contact Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Contact Results": {
+      "main": [
+        [
+          {
+            "node": "Fetch Accounts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Accounts": {
+      "main": [
+        [
+          {
+            "node": "Select Lookups",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select Lookups": {
+      "main": [
+        [
+          {
+            "node": "YC Founders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "YC Founders": {
+      "main": [
+        [
+          {
+            "node": "Has Query",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "YC Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Query": {
+      "main": [
+        [
+          {
+            "node": "Tavily Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tavily Search": {
+      "main": [
+        [
+          {
+            "node": "Parse People",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse People": {
+      "main": [
+        [
+          {
+            "node": "Only Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Only Rows": {
+      "main": [
+        [
+          {
+            "node": "Append Contact Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "YC Rows": {
+      "main": [
+        [
+          {
+            "node": "Append Contact Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "meta": {},
+  "nodeGroups": [],
+  "tags": []
+}

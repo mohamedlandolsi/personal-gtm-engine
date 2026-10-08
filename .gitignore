@@ -1,0 +1,16 @@
+# secrets and local state
+.env
+.env.*
+!.env.example
+config.json
+*.pem
+*service-account*.json
+credentials*.json
+# raw n8n exports (sanitize them into workflows/ first)
+exports/
+*.export.json
+# n8n data volume and OS files
+.n8n/
+n8n_data/
+.DS_Store
+__pycache__/
