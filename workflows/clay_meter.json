@@ -1,0 +1,281 @@
+{
+  "name": "Clay Meter",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "716688b6-0649-4588-b74e-dae11a0b7d96",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "label",
+              "name": "label",
+              "value": "before",
+              "type": "string"
+            },
+            {
+              "id": "module",
+              "name": "module",
+              "value": "C2-batch",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "9ab1cc43-7c4a-4f56-bd0a-9e82c5eea770",
+      "name": "Label",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.clay.com/public/v0/credits/balance",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "00175542-d1f2-4fb2-93bd-cc94eca9226c",
+      "name": "Clay Balance",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        448,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "Clay API Key"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ts",
+              "name": "ts",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            },
+            {
+              "id": "label",
+              "name": "label",
+              "value": "={{ $('Label').item.json.label }}",
+              "type": "string"
+            },
+            {
+              "id": "module",
+              "name": "module",
+              "value": "={{ $('Label').item.json.module }}",
+              "type": "string"
+            },
+            {
+              "id": "data_credits",
+              "name": "data_credits",
+              "value": "={{ $json.balance ?? '' }}",
+              "type": "string"
+            },
+            {
+              "id": "actions",
+              "name": "actions",
+              "value": "={{ $json.action_execution_balance ?? '' }}",
+              "type": "string"
+            },
+            {
+              "id": "note",
+              "name": "note",
+              "value": "={{ $json.error ? JSON.stringify($json.error).slice(0, 150) : ($json.balance === undefined ? 'no balance field: ' + JSON.stringify($json).slice(0, 120) : '') }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "134981ca-5ff3-42b1-88a4-c55a2d6acb79",
+      "name": "Ops Row",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        672,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "YOUR_SPREADSHEET_ID",
+          "cachedResultName": "personal-gtm-engine",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": 1556404649,
+          "cachedResultName": "clay_ops",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit#gid=1556404649"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "ts",
+              "displayName": "ts",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "label",
+              "displayName": "label",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "module",
+              "displayName": "module",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "data_credits",
+              "displayName": "data_credits",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "actions",
+              "displayName": "actions",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "note",
+              "displayName": "note",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "f77527f3-aede-47bd-a9ae-1f9484eb7846",
+      "name": "Append Clay Ops",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        896,
+        0
+      ],
+      "credentials": {
+        "googleApi": {
+          "name": "Google Service Account account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Label",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Label": {
+      "main": [
+        [
+          {
+            "node": "Clay Balance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clay Balance": {
+      "main": [
+        [
+          {
+            "node": "Ops Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ops Row": {
+      "main": [
+        [
+          {
+            "node": "Append Clay Ops",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true
+  },
+  "meta": {
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp"
+  },
+  "tags": [],
+  "nodeGroups": []
+}

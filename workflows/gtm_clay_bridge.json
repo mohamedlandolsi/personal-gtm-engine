@@ -1,0 +1,505 @@
+{
+  "name": "GTM Clay Bridge",
+  "nodes": [
+    {
+      "id": "3de2d88c-a549-4f55-8601-384c520a56e0",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "89c20627-490e-4208-8983-941bd27f7673",
+      "name": "Read Clay Results",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        224,
+        0
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "YOUR_SPREADSHEET_ID",
+          "cachedResultName": "personal-gtm-engine",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": 33926923,
+          "cachedResultName": "clay_results",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit#gid=33926923"
+        },
+        "options": {}
+      },
+      "alwaysOutputData": true,
+      "executeOnce": true,
+      "credentials": {
+        "googleApi": {
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "id": "fee8a6cb-35c2-4200-b5d9-d3dabdd0cad6",
+      "name": "Read Clay Export",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        448,
+        0
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "YOUR_SPREADSHEET_ID",
+          "cachedResultName": "personal-gtm-engine",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": 1130688138,
+          "cachedResultName": "clay_export_accounts",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit#gid=1130688138"
+        },
+        "options": {}
+      },
+      "alwaysOutputData": true,
+      "executeOnce": true,
+      "credentials": {
+        "googleApi": {
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "id": "d0156798-1005-4108-b23e-dfcb167f2c5a",
+      "name": "Map Clay Export",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Maps Clay's CSV export (raw headers) onto the clay_results contract.\n// Skips domains already in clay_results, so running it twice writes 0 rows.\nconst COST_PER_ROW = 1.0;          // (1972.4 - 1947.4) / 25 from clay_ops: pilot + batch + re-runs\nconst MODEL = 'gpt-5-nano';        // the model you kept\nconst MAX_TOOLS = 8;               // more tools than this means the AI listed its options, not evidence\n\nconst safeAll = (n) => { try { return $(n).all().map(i => i.json); } catch (e) { return []; } };\nconst norm = (d) => String(d || '').toLowerCase().trim()\n  .replace(/^https?:\\/\\//, '').replace(/^www\\./, '').split('/')[0];\n// Finds a value by header name, also accepting prefixed headers like \"Google Sheets :: domain\"\nconst pick = (row, names) => {\n  for (const n of names) {\n    const want = n.toLowerCase();\n    for (const k of Object.keys(row)) {\n      const key = k.trim().toLowerCase();\n      if (key === want || key.endsWith(':: ' + want)) {\n        const v = row[k];\n        if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();\n      }\n    }\n  }\n  return '';\n};\n\nconst STAGES = ['unknown', 'bootstrapped', 'pre_seed', 'seed', 'series_a', 'series_b'];\n// The AI sometimes writes the word \"unknown\" or \"none\" instead of leaving a field empty\nconst clean = (s) => (/^(unknown|none|n\\/a|null)$/i.test(String(s).trim()) ? '' : String(s).trim());\nconst done = new Set(safeAll('Read Clay Results').map(r => norm(r.domain)).filter(d => d && d !== '__placeholder__'));\nconst stats = {\n  export_rows: 0, written: 0, already_in_clay_results: 0, not_enriched: 0, waiting_for_research: 0, bad_domain: 0,\n  tech_stack_dropped: 0, tech_stack_dropped_domains: [], summary_dropped: 0, summary_dropped_domains: []\n};\nconst seen = new Set();\nconst out = [];\nconst now = new Date().toISOString();\n\nfor (const r of safeAll('Read Clay Export')) {\n  stats.export_rows++;\n  const domain = norm(pick(r, ['domain_clean', 'domain']));\n  if (!/^[a-z0-9-]+(\\.[a-z0-9-]+)+$/.test(domain)) { stats.bad_domain++; continue; }\n  if (done.has(domain) || seen.has(domain)) { stats.already_in_clay_results++; continue; }\n\n  const employees = pick(r, ['employee_count_clay']).replace(/[^0-9]/g, '');\n  // The research cell holds \"Response\" once the AI column ran, even when it found nothing\n  const ran = pick(r, ['research']) !== '';\n  if (!employees && !ran) { stats.not_enriched++; continue; }          // row never ran in Clay\n  if (!ran) { stats.waiting_for_research++; continue; }                 // research failed: write on a later import\n\n  // A summary that opens with \"Unknown\" carries no facts; keep the row, drop the text\n  let summary = pick(r, ['claygent_summary']);\n  if (/^unknown\\b/i.test(summary)) { summary = ''; stats.summary_dropped++; stats.summary_dropped_domains.push(domain); }\n\n  let stage = pick(r, ['funding_stage_clay']).toLowerCase();\n  if (!STAGES.includes(stage)) stage = 'unknown';\n  const toolList = pick(r, ['tech_stack_clay']).toLowerCase().replace(/[\\[\\]\"]/g, '')\n    .split(',').map(s => s.trim()).filter(Boolean);\n  let tools = toolList.join(', ');\n  if (toolList.length > MAX_TOOLS) { tools = ''; stats.tech_stack_dropped++; stats.tech_stack_dropped_domains.push(domain); }\n  const li = pick(r, ['linkedin_url_clay']);\n\n  seen.add(domain);\n  stats.written++;\n  out.push({ json: {\n    domain,\n    company_name: pick(r, ['company name', 'company_name']) || domain,\n    linkedin_url: /linkedin\\.com\\/company\\//i.test(li) ? li : '',\n    employee_count_clay: employees,\n    tech_stack_clay: tools,\n    funding_stage_clay: stage,\n    claygent_summary: summary.slice(0, 500),\n    clay_credits_used: COST_PER_ROW,\n    enriched_at: now,\n    gtm_signal: clean(pick(r, ['gtm_signal'])).slice(0, 300),\n    evidence_url: /^https?:\\/\\//i.test(pick(r, ['evidence_url'])) ? pick(r, ['evidence_url']) : '',\n    clay_model: MODEL\n  } });\n}\n\n// The stats item has no domain, so the Filter after this node drops it. Read it in this node's output.\nreturn out.concat([{ json: { __stats: JSON.stringify(stats) } }]);\n"
+      }
+    },
+    {
+      "id": "86b6168b-9f5e-4d84-acc3-ec59aa59f457",
+      "name": "Only Rows",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        896,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "8f1c2a4e-6b3d-4e7a-9c1f-2d5e8a7b0c13",
+              "leftValue": "={{ $json.domain }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "5dbbed4d-937c-4af6-8742-f6c570186cb7",
+      "name": "Append Clay Results",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1120,
+        0
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "YOUR_SPREADSHEET_ID",
+          "cachedResultName": "personal-gtm-engine",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": 33926923,
+          "cachedResultName": "clay_results",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit#gid=33926923"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "domain",
+              "displayName": "domain",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "company_name",
+              "displayName": "company_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "linkedin_url",
+              "displayName": "linkedin_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "employee_count_clay",
+              "displayName": "employee_count_clay",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tech_stack_clay",
+              "displayName": "tech_stack_clay",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "funding_stage_clay",
+              "displayName": "funding_stage_clay",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "claygent_summary",
+              "displayName": "claygent_summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "clay_credits_used",
+              "displayName": "clay_credits_used",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "enriched_at",
+              "displayName": "enriched_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "gtm_signal",
+              "displayName": "gtm_signal",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "evidence_url",
+              "displayName": "evidence_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "clay_model",
+              "displayName": "clay_model",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleApi": {
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "id": "37b0216c-e78a-4fa9-b888-64f7ced6735d",
+      "name": "Update Clay Queue",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1344,
+        0
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "YOUR_SPREADSHEET_ID",
+          "cachedResultName": "personal-gtm-engine",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": 882159814,
+          "cachedResultName": "clay_queue",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit#gid=882159814"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "domain": "={{ $('Only Rows').item.json.domain }}",
+            "clay_status": "clay_done"
+          },
+          "matchingColumns": [
+            "domain"
+          ],
+          "schema": [
+            {
+              "id": "queued_at",
+              "displayName": "queued_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "account_id",
+              "displayName": "account_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "domain",
+              "displayName": "domain",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "company_name",
+              "displayName": "company_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "website",
+              "displayName": "website",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "linkedin_url",
+              "displayName": "linkedin_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "final_score",
+              "displayName": "final_score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "tech_stack_n8n",
+              "displayName": "tech_stack_n8n",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "clay_status",
+              "displayName": "clay_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleApi": {
+          "name": "Google Service Account account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Clay Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Clay Results": {
+      "main": [
+        [
+          {
+            "node": "Read Clay Export",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Clay Export": {
+      "main": [
+        [
+          {
+            "node": "Map Clay Export",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map Clay Export": {
+      "main": [
+        [
+          {
+            "node": "Only Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Only Rows": {
+      "main": [
+        [
+          {
+            "node": "Append Clay Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Clay Results": {
+      "main": [
+        [
+          {
+            "node": "Update Clay Queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true
+  },
+  "meta": {
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp"
+  },
+  "tags": [],
+  "nodeGroups": []
+}

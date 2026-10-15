@@ -1,0 +1,429 @@
+{
+  "name": "Clay Email Queue",
+  "nodes": [
+    {
+      "id": "822656f5-3cee-4576-9c9e-03951c8f18bb",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "a2555c58-d092-429d-b113-64347b25e5fd",
+      "name": "Read Contacts",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        224,
+        0
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "YOUR_SPREADSHEET_ID",
+          "cachedResultName": "personal-gtm-engine",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": 554904753,
+          "cachedResultName": "contacts",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit#gid=554904753"
+        },
+        "options": {}
+      },
+      "alwaysOutputData": true,
+      "executeOnce": true,
+      "credentials": {
+        "googleApi": {
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "id": "db97b01c-2568-461a-9ee3-49f3ed9f2faa",
+      "name": "Read Accounts",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        448,
+        0
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "YOUR_SPREADSHEET_ID",
+          "cachedResultName": "personal-gtm-engine",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": 17930613,
+          "cachedResultName": "accounts",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit#gid=17930613"
+        },
+        "options": {}
+      },
+      "alwaysOutputData": true,
+      "executeOnce": true,
+      "credentials": {
+        "googleApi": {
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "id": "7e30bc62-6b96-45a8-b472-9f437f9373ae",
+      "name": "Read Email Queue",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        672,
+        0
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "YOUR_SPREADSHEET_ID",
+          "cachedResultName": "personal-gtm-engine",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": 448785775,
+          "cachedResultName": "clay_contacts_queue",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit#gid=448785775"
+        },
+        "options": {}
+      },
+      "alwaysOutputData": true,
+      "executeOnce": true,
+      "credentials": {
+        "googleApi": {
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "id": "8bd78300-c347-4c81-a76d-0357c6913905",
+      "name": "Select Email Candidates",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Picks contacts for the Clay table \"Contacts Email\".\n//   find   = no email yet, account final_score >= MIN_ACCOUNT_SCORE, one contact per account\n//   verify = email_status 'guessed' (any score): a validator checks the address we already have\nconst MIN_ACCOUNT_SCORE = 72;   // Wave 1. Accounts at 65 to 71 wait for Wave 2\nconst MAX_ROWS = 25;   // kill switch: set to 0 and nothing is queued\n\nconst safeAll = (n) => { try { return $(n).all().map(i => i.json); } catch (e) { return []; } };\nconst norm = (d) => String(d || '').toLowerCase().trim()\n  .replace(/^https?:\\/\\//, '').replace(/^www\\./, '').split('/')[0];\n// Removes accents so email patterns work: \"Léonard\" -> \"Leonard\"\nconst ascii = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim();\nconst STATUS_RANK = { used_in_outreach: 0, new: 1 };\n\nconst score = {};\nfor (const a of safeAll('Read Accounts')) {\n  const d = norm(a.domain);\n  if (d) score[d] = Number(a.final_score) || 0;\n}\nconst queueRows = safeAll('Read Email Queue').filter(r => r && r.contact_id);\nconst queuedIds = new Set(queueRows.map(r => String(r.contact_id).trim()));\nconst queuedFindDomains = new Set(queueRows.filter(r => r.mode === 'find').map(r => norm(r.domain)));\n\nconst stats = { contacts: 0, queued_find: 0, queued_verify: 0, skipped_rejected: 0, skipped_low_score: 0,\n  skipped_already_queued: 0, skipped_extra_per_account: 0, skipped_cap: 0 };\nconst verify = [];\nconst byAccount = {};\n\nfor (const c of safeAll('Read Contacts')) {\n  if (!c || !c.contact_id) continue;\n  stats.contacts++;\n  const status = String(c.status || '').toLowerCase();\n  const email = String(c.email || '').trim();\n  const es = String(c.email_status || '').toLowerCase();\n  if (status === 'rejected') { stats.skipped_rejected++; continue; }\n  if (queuedIds.has(String(c.contact_id).trim())) { stats.skipped_already_queued++; continue; }\n  if (email && es === 'guessed') { verify.push(c); continue; }\n  if (email) continue;                                   // verified emails are never touched\n  const d = norm(c.domain || c.account_domain);\n  if ((score[d] || 0) < MIN_ACCOUNT_SCORE) { stats.skipped_low_score++; continue; }\n  (byAccount[d] = byAccount[d] || []).push(c);\n}\n\nconst find = [];\nfor (const [d, list] of Object.entries(byAccount)) {\n  if (queuedFindDomains.has(d)) { stats.skipped_extra_per_account += list.length; continue; }\n  list.sort((a, b) =>\n    (STATUS_RANK[String(a.status).toLowerCase()] ?? 9) - (STATUS_RANK[String(b.status).toLowerCase()] ?? 9) ||\n    (Number(b.contact_score) || 0) - (Number(a.contact_score) || 0) ||\n    String(a.contact_id).localeCompare(String(b.contact_id)));\n  find.push(list[0]);\n  stats.skipped_extra_per_account += list.length - 1;\n}\n// When the cap bites, keep the highest-scoring accounts; the rest are queued on the next run\nfind.sort((a, b) => (score[norm(b.domain || b.account_domain)] || 0) - (score[norm(a.domain || a.account_domain)] || 0));\n\nconst now = new Date().toISOString();\nconst toRow = (c, mode) => {\n  const parts = ascii(c.full_name).replace(/[^A-Za-z\\s'-]/g, ' ').split(/\\s+/).filter(Boolean);\n  return { json: {\n    queued_at: now,\n    contact_id: c.contact_id,\n    account_id: c.account_id || '',\n    domain: norm(c.domain || c.account_domain),\n    company_name: c.company_name || '',\n    full_name: c.full_name || '',\n    first_name: (parts[0] || '').toLowerCase(),\n    last_name: parts.slice(1).join('').toLowerCase(),   // \"van den Ingh\" -> \"vandeningh\"\n    title: c.title || '',\n    linkedin_url: c.linkedin_url || '',\n    current_email: c.email || '',\n    current_email_status: c.email_status || '',\n    contact_score: Number(c.contact_score) || 0,\n    mode,\n    clay_status: 'queued'\n  } };\n};\n\nconst all = verify.map(c => toRow(c, 'verify')).concat(find.map(c => toRow(c, 'find')));\nconst out = all.slice(0, Math.max(0, MAX_ROWS));\nstats.skipped_cap = all.length - out.length;\nstats.queued_verify = out.filter(r => r.json.mode === 'verify').length;\nstats.queued_find = out.length - stats.queued_verify;\n\n// The stats item has no contact_id, so the Filter drops it. Read it in this node's output.\nreturn out.concat([{ json: { __stats: JSON.stringify(stats) } }]);\n"
+      }
+    },
+    {
+      "id": "e5d4b7cc-fa0a-489b-837b-83d6818c83ac",
+      "name": "Only Rows",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        1120,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "3e9b7c21-5a4d-4f8e-b2c6-91d0a7e4f532",
+              "leftValue": "={{ $json.contact_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "88ea4cd3-3fc4-424e-921e-a04ba6ca3884",
+      "name": "Append Email Queue",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1344,
+        0
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "YOUR_SPREADSHEET_ID",
+          "cachedResultName": "personal-gtm-engine",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": 448785775,
+          "cachedResultName": "clay_contacts_queue",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit#gid=448785775"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "queued_at",
+              "displayName": "queued_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "contact_id",
+              "displayName": "contact_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "account_id",
+              "displayName": "account_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "domain",
+              "displayName": "domain",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "company_name",
+              "displayName": "company_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "full_name",
+              "displayName": "full_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "first_name",
+              "displayName": "first_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "last_name",
+              "displayName": "last_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "title",
+              "displayName": "title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "linkedin_url",
+              "displayName": "linkedin_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "current_email",
+              "displayName": "current_email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "current_email_status",
+              "displayName": "current_email_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "contact_score",
+              "displayName": "contact_score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "mode",
+              "displayName": "mode",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "clay_status",
+              "displayName": "clay_status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleApi": {
+          "name": "Google Service Account account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Contacts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Contacts": {
+      "main": [
+        [
+          {
+            "node": "Read Accounts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Accounts": {
+      "main": [
+        [
+          {
+            "node": "Read Email Queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Email Queue": {
+      "main": [
+        [
+          {
+            "node": "Select Email Candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select Email Candidates": {
+      "main": [
+        [
+          {
+            "node": "Only Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Only Rows": {
+      "main": [
+        [
+          {
+            "node": "Append Email Queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true
+  },
+  "meta": {
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp"
+  },
+  "tags": [],
+  "nodeGroups": []
+}
