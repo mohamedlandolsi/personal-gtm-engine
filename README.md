@@ -11,10 +11,12 @@ An outbound engine built in n8n that finds B2B startups likely to need GTM autom
 | **Discover** | Companies from Y Combinator's public directory, Hacker News "Who is hiring" threads and a hand-picked seed list |
 | **Filter** | Deterministic gates (domain, size, industry, keywords, timezone, seen-before) run before any paid or LLM call |
 | **Score** | An explainable 0-100 account score with its breakdown and reasons |
-| **Enrich** | Tech stack and hiring signals from the company's own website, optional Clay summaries |
+| **Enrich** | Tech stack and hiring signals from the company's own website, then a metered Clay enrichment layer (below) |
 | **Find people** | Founders read from the company's YC page (verified by website domain), Tavily search as a gated fallback |
 | **Draft** | A LinkedIn note, a long message and three follow-ups, written by a Groq/Gemini fallback chain and checked by a rule-based validator |
 | **Review** | One Discord card per draft with everything needed to decide; approval happens in the sheet |
+
+Clay enrichment layer: one structured AI call per account (1.0 credit, was 2.8), Work Email waterfall with Conservative validation (19/20 founders verified, about 0.5 credit per verified email), credits metered by n8n through Clay's Public API.
 
 ```mermaid
 flowchart LR
@@ -61,6 +63,22 @@ Numbers below come from the engine's own telemetry (`ops` and `digest_ops` tabs)
 
 ![Ops tab](screenshots/ops.png)
 
+**Clay enrichment layer**: one structured research call per account, a run condition that skips low-score rows, and the email waterfall's cost history.
+
+| Research column config | Accounts v2 table |
+|---|---|
+| ![Clay research column config](screenshots/c1-research-config.png) | ![Accounts v2 table](screenshots/c1-table.png) |
+
+| Work Email waterfall config | Waterfall cost history |
+|---|---|
+| ![Work Email waterfall config](screenshots/c2-waterfall-config.png) | ![Clay History for the email waterfall](screenshots/c2-history.png) |
+
+**Clay workflows in n8n**
+
+| Clay Meter | GTM Clay Bridge | Clay Email Queue | Clay Email Import |
+|---|---|---|---|
+| ![Clay Meter workflow](screenshots/Clay-Meter-Canva.png) | ![GTM Clay Bridge workflow](screenshots/GTM-Clay-Bridge-Canva.png) | ![Clay Email Queue workflow](screenshots/Clay-Email-Queue-Canva.png) | ![Clay Email Import workflow](screenshots/Clay-Email-Import-Canva.png) |
+
 ## Why it is built this way
 
 | Principle | Where it shows |
@@ -81,7 +99,7 @@ Decision log: [docs/ADR.md](docs/ADR.md) (66 architecture decision records). Ori
 | Orchestration | n8n, self-hosted in Docker | Free |
 | State and review | Google Sheets via a service account, n8n Data Tables | Free |
 | Discovery | YC public directory, HN Algolia API, seed sheet | Free |
-| Enrichment | Website fetch with regex signatures, Clay (optional) | Free / free credits |
+| Enrichment | Website fetch with regex signatures, Clay (structured AI research, Work Email waterfall, Public API meter) | Free / free credits |
 | People | YC company pages, Tavily Search | Free / free credits |
 | LLM | Groq (`openai/gpt-oss-120b`, `qwen/qwen3.8-27b`, `openai/gpt-oss-20b`), Gemini | Free tiers |
 | Review | Discord webhook | Free |
@@ -93,6 +111,10 @@ workflows/                    sanitized n8n exports (import these)
   personal_gtm_engine.json    discovery, scoring, enrichment, contacts, drafting
   gtm_contact_finder.json     founder lookup: YC pages, then Tavily
   personal_gtm_digest.json    Discord review cards
+  clay_meter.json             reads the Clay credit balance into clay_ops
+  gtm_clay_bridge.json        imports the Clay accounts export into clay_results
+  clay_email_queue.json       picks one primary contact per account for Clay
+  clay_email_import.json      applies Clay email results to contacts
 config/config.example.json    the full runtime config (lives in the sheet's config tab)
 docs/ARCHITECTURE.md          diagrams and stage details
 docs/SHEET_SCHEMA.md          every tab, header row and status value
