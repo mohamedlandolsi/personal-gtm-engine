@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useEffectEvent, useState, useTransition } from "react";
+import { useEffect, useEffectEvent, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { review } from "@/app/(console)/queue/actions";
@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { StatusChip } from "@/components/status-chip";
+import { useQueueSelection } from "@/components/queue-workspace";
 
 const FIELDS = [
   "email_subject",
@@ -127,6 +128,8 @@ export function ReviewActions({
   draft: Draft;
 }) {
   const router = useRouter();
+  const queue = useQueueSelection();
+  const sheetRef = useRef<HTMLElement>(null);
   const [pending, startTransition] = useTransition();
   const [editing, setEditing] = useState(false);
   const [values, setValues] = useState(() => toValues(draft));
@@ -182,12 +185,16 @@ export function ReviewActions({
   }
 
   // Keyboard-first review on desktop: A approve, E edit, R reject, J next, K previous.
+  // Inside the desktop queue pane, J/K move the list selection; a hidden pane (phones) ignores keys.
   const onKey = useEffectEvent((e: KeyboardEvent) => {
     if (e.metaKey || e.ctrlKey || e.altKey || isTyping(e.target) || editing || confirm || pending) return;
+    if (!sheetRef.current?.getClientRects().length) return;
     const key = e.key.toLowerCase();
     if (key === "a" && reviewable) run("approve");
     else if (key === "e" && canEdit) startEdit();
     else if (key === "r" && (reviewable || approved)) setConfirm("reject");
+    else if (key === "j" && queue) queue.move(1);
+    else if (key === "k" && queue) queue.move(-1);
     else if (key === "j" && nextId) router.push(`/queue/${encodeURIComponent(nextId)}`);
     else if (key === "k" && prevId) router.push(`/queue/${encodeURIComponent(prevId)}`);
     else return;
@@ -324,7 +331,7 @@ export function ReviewActions({
         <div className="flex items-center gap-2">{buttons}</div>
       </div>
 
-      <article className={cn("space-y-5 rounded-sm border border-l-[3px] bg-card p-4 sm:p-6", STATE_RULE[state])}>
+      <article ref={sheetRef} className={cn("space-y-5 rounded-sm border border-l-[3px] bg-card p-4 sm:p-6", STATE_RULE[state])}>
         <div className="flex flex-wrap gap-2">
           {linkedinFirst && draft.linkedin_note ? (
             <Button size="sm" variant="outline" className="h-11 sm:h-7" onClick={() => copy(draft.linkedin_note ?? "")}>Copy note</Button>

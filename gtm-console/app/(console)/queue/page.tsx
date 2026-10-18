@@ -1,12 +1,10 @@
 import Link from "next/link";
 import { sql } from "@/lib/db";
 import { requireSession } from "@/lib/session";
-import { STATE_RULE, displayState, timeAgo } from "@/lib/format";
-import { cn } from "@/lib/utils";
-import { ChannelIcon } from "@/components/channel-icon";
-import { ScoreMeter } from "@/components/score-meter";
+import { displayState, timeAgo } from "@/lib/format";
+import { DraftDetail } from "@/components/draft-detail";
+import { QueueWorkspace, type QueueRow } from "@/components/queue-workspace";
 import { SegmentedLinks } from "@/components/segmented-links";
-import { StatusChip } from "@/components/status-chip";
 
 // Per-request private data: the layout's `instant = false` does not cover pages below it.
 export const instant = false;
@@ -36,8 +34,10 @@ type Row = {
 
 export default async function QueuePage({ searchParams }: PageProps<"/queue">) {
   await requireSession();
-  const raw = (await searchParams).tab;
-  const tab: Tab = TABS.some((t) => t.key === raw) ? (raw as Tab) : "review";
+  const sp = await searchParams;
+  const tab: Tab = TABS.some((t) => t.key === sp.tab) ? (sp.tab as Tab) : "review";
+  // The desktop pane's draft. Phones never set it; the list picks the first row on desktop.
+  const selectedId = typeof sp.id === "string" && sp.id.length > 0 && sp.id.length <= 200 ? sp.id : null;
 
   const [counts] = (await sql`
     select
@@ -60,6 +60,18 @@ export default async function QueuePage({ searchParams }: PageProps<"/queue">) {
     order by final_score desc nulls last, run_date desc nulls last
     limit 100`) as Row[];
 
+  const list: QueueRow[] = rows.map((r) => ({
+    outreach_id: r.outreach_id,
+    company_name: r.company_name,
+    final_score: r.final_score,
+    contact_name: r.contact_name,
+    contact_title: r.contact_title,
+    channel: r.channel,
+    first_line: r.first_line,
+    age: r.run_date ? timeAgo(r.run_date.toISOString()) : "",
+    state: displayState(r.approval_status, r.send_status),
+  }));
+
   return (
     <div className="space-y-4">
       <h1 className="text-2xl leading-tight font-semibold">Review queue</h1>
@@ -73,7 +85,8 @@ export default async function QueuePage({ searchParams }: PageProps<"/queue">) {
         }))}
       />
 
-      {rows.length === 0 ? (
+      {/* With a selection, keep the workspace even when the list just emptied, so the last row can collapse out. */}
+      {list.length === 0 && !selectedId ? (
         <div className="rounded-lg border bg-card px-4 py-8 text-center">
           {tab === "review" ? (
             <p>Nothing to review. New drafts arrive after the next engine run.</p>
@@ -88,37 +101,15 @@ export default async function QueuePage({ searchParams }: PageProps<"/queue">) {
           </Link>
         </div>
       ) : (
-        <ul className="divide-y divide-border overflow-hidden rounded-lg border bg-card">
-          {rows.map((r) => {
-            const state = displayState(r.approval_status, r.send_status);
-            return (
-              <li key={r.outreach_id}>
-                <Link
-                  href={`/queue/${encodeURIComponent(r.outreach_id)}`}
-                  className={cn("block space-y-1 border-l-[3px] px-4 py-3 hover:bg-secondary", STATE_RULE[state])}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="min-w-0 truncate font-semibold">{r.company_name ?? "Unknown company"}</span>
-                    <ScoreMeter score={r.final_score} />
-                    {tab !== "review" ? <StatusChip state={state} /> : null}
-                    <span className="tabular ml-auto shrink-0 text-[0.8125rem] text-ink-3">
-                      {r.run_date ? timeAgo(r.run_date.toISOString()) : ""}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 text-[0.8125rem] text-muted-foreground">
-                    <ChannelIcon channel={r.channel} className="size-3.5 shrink-0" />
-                    <span className="truncate">
-                      {[r.contact_name, r.contact_title].filter(Boolean).join(", ") || "No contact"}
-                    </span>
-                  </div>
-                  {r.first_line ? (
-                    <p className="line-clamp-2 font-serif text-[1.0625rem] leading-relaxed">{r.first_line}</p>
-                  ) : null}
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
+        <QueueWorkspace key={tab} tab={tab} rows={list} selectedId={selectedId} showChips={tab !== "review"}>
+          {selectedId ? (
+            <DraftDetail id={selectedId} mode="pane" />
+          ) : (
+            <div className="rounded-lg border bg-card px-4 py-8 text-center text-muted-foreground">
+              <p>Pick a draft to review it here.</p>
+            </div>
+          )}
+        </QueueWorkspace>
       )}
     </div>
   );
