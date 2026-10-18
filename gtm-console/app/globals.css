@@ -1,0 +1,187 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-ui), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-reading), ui-serif, Georgia, serif;
+  --font-mono: ui-monospace, "Cascadia Code", Menlo, monospace;
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* gtm-console-ui tokens */
+  --color-ink-3: var(--ink-3);
+  --color-state-pending: var(--state-pending);       --color-state-pending-tint: var(--state-pending-tint);
+  --color-state-edited: var(--state-edited);         --color-state-edited-tint: var(--state-edited-tint);
+  --color-state-approved: var(--state-approved);     --color-state-approved-tint: var(--state-approved-tint);
+  --color-state-rejected: var(--state-rejected);     --color-state-rejected-tint: var(--state-rejected-tint);
+  --color-state-sent: var(--state-sent);             --color-state-sent-tint: var(--state-sent-tint);
+  --color-state-superseded: var(--state-superseded);
+  --color-danger: var(--danger);                     --color-danger-tint: var(--danger-tint);
+  --color-meter-track: var(--meter-track);
+  --color-meter-fill: var(--meter-fill);
+  --color-meter-tick: var(--meter-tick);
+}
+
+:root {
+  --radius: 0.5rem;                 /* controls; panels use radius-lg, the message sheet radius-sm */
+
+  /* paper and graphite (light) */
+  --background: #F3F4F1;            /* canvas */
+  --foreground: #16191D;            /* ink */
+  --card: #FFFFFF;                  /* surface: sheets, list, panels */
+  --card-foreground: #16191D;
+  --popover: #FFFFFF;
+  --popover-foreground: #16191D;
+  --primary: #16191D;               /* primary action = solid ink */
+  --primary-foreground: #F3F4F1;
+  --secondary: #E9EBE6;             /* raised: hover rows, segmented control track */
+  --secondary-foreground: #16191D;
+  --muted: #E9EBE6;
+  --muted-foreground: #4B525C;      /* ink-2: secondary text */
+  --accent: #E9EBE6;
+  --accent-foreground: #16191D;
+  --destructive: #B42318;
+  --border: #D7DAD3;                /* hairlines between content */
+  --input: #8D939B;                 /* input borders */
+  --ring: #2F5BD3;                  /* focus only */
+
+  --ink-3: #5C636D;                 /* tertiary text: timestamps, counts */
+
+  /* state (text on tint) */
+  --state-pending: #8A5300;    --state-pending-tint: #FBEFD6;
+  --state-edited: #1F4DB0;     --state-edited-tint: #E4EBFA;
+  --state-approved: #1C6A3A;   --state-approved-tint: #DEF1E4;
+  --state-rejected: #555C66;   --state-rejected-tint: #E8EAED;
+  --state-sent: #5A3BB5;       --state-sent-tint: #ECE6FA;
+  --state-superseded: #8A9099; /* always with line-through, no tint */
+  --danger: #B42318;           --danger-tint: #FBE7E5;
+
+  /* score meter: one neutral ramp, never state colors */
+  --meter-track: #E3E5E0;
+  --meter-fill: #16191D;
+  --meter-tick: #8D939B;
+
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+  /* graphite (dark): a real mid-dark, not tinted black */
+  --background: #1B1E22;
+  --foreground: #E8EBEE;
+  --card: #23272C;
+  --card-foreground: #E8EBEE;
+  --popover: #2C3137;
+  --popover-foreground: #E8EBEE;
+  --primary: #E8EBEE;
+  --primary-foreground: #16191D;
+  --secondary: #2C3137;
+  --secondary-foreground: #E8EBEE;
+  --muted: #2C3137;
+  --muted-foreground: #A7AFB9;
+  --accent: #2C3137;
+  --accent-foreground: #E8EBEE;
+  --destructive: #FF9C91;
+  --border: #383E46;
+  --input: #6B727B;
+  --ring: #8FB0FF;
+
+  --ink-3: #979FA9;
+
+  --state-pending: #F0BE5F;    --state-pending-tint: #3A2F17;
+  --state-edited: #9DB7FF;     --state-edited-tint: #1E2A45;
+  --state-approved: #84D7A0;   --state-approved-tint: #183222;
+  --state-rejected: #AAB1BA;   --state-rejected-tint: #2C3137;
+  --state-sent: #C1B0FF;       --state-sent-tint: #2A2343;
+  --state-superseded: #7E8690;
+  --danger: #FF9C91;           --danger-tint: #3D1F1C;
+
+  --meter-track: #343A41;
+  --meter-fill: #E8EBEE;
+  --meter-tick: #6B727B;
+
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "ss01", "tnum" 0;
+  }
+  html {
+    @apply font-sans;
+  }
+  .tabular { font-variant-numeric: tabular-nums; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+  }
+}
+
+/* Unlayered on purpose: it must beat the `outline-none` utilities the shadcn primitives ship with. */
+:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
