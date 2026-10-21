@@ -72,8 +72,16 @@ create table if not exists accounts (
   contact_feasibility_score integer,
   contact_status            text,
   dashboard_dirty_at        timestamptz,   -- set by the console, cleared by the sync
-  synced_at                 timestamptz
+  synced_at                 timestamptz,
+  clay_trigger              text,          -- Sprint 11: one dated "why now" fact from Clay
+  clay_trigger_source       text,          -- hiring | funding | news
+  clay_trigger_date         text           -- YYYY-MM-DD or empty; text because Sheets sends "" (ADR-S11-4)
 );
+-- Sprint 11: adds the trigger columns to an existing accounts table (no-op on a fresh install)
+alter table accounts
+  add column if not exists clay_trigger text,
+  add column if not exists clay_trigger_source text,
+  add column if not exists clay_trigger_date text;
 create index if not exists accounts_domain_idx on accounts (domain);
 create index if not exists accounts_score_idx  on accounts (final_score desc nulls last);
 
@@ -470,12 +478,13 @@ begin
     employee_count, location_raw, country, timezone_utc_offset, funding_stage, final_score, priority, why_match,
     red_flags, score_breakdown, confidence, status, linkedin_url, tech_stack, funding_proxy_score,
     automation_need_score, enrichment_status, clay_summary, clay_status, clay_enriched_at,
-    contact_feasibility_score, contact_status, synced_at)
+    contact_feasibility_score, contact_status, clay_trigger, clay_trigger_source, clay_trigger_date, synced_at)
   select x.account_id, x.run_date, x.source, x.company_name, x.domain, x.website, x.industry, x.company_type,
     x.employee_count, x.location_raw, x.country, x.timezone_utc_offset, x.funding_stage, x.final_score, x.priority,
     x.why_match, x.red_flags, x.score_breakdown, x.confidence, x.status, x.linkedin_url, x.tech_stack,
     x.funding_proxy_score, x.automation_need_score, x.enrichment_status, x.clay_summary, x.clay_status,
-    x.clay_enriched_at, x.contact_feasibility_score, x.contact_status, now()
+    x.clay_enriched_at, x.contact_feasibility_score, x.contact_status,
+    x.clay_trigger, x.clay_trigger_source, x.clay_trigger_date, now()
   from jsonb_populate_recordset(null::accounts, coalesce(p->'accounts', '[]'::jsonb)) as x
   on conflict (account_id) do update set
     run_date = excluded.run_date, source = excluded.source, company_name = excluded.company_name,
@@ -491,6 +500,8 @@ begin
     enrichment_status = excluded.enrichment_status, clay_summary = excluded.clay_summary,
     clay_status = excluded.clay_status, clay_enriched_at = excluded.clay_enriched_at,
     contact_feasibility_score = excluded.contact_feasibility_score, contact_status = excluded.contact_status,
+    clay_trigger = excluded.clay_trigger, clay_trigger_source = excluded.clay_trigger_source,
+    clay_trigger_date = excluded.clay_trigger_date,
     synced_at = now();
   get diagnostics n_acc = row_count;
 
@@ -625,12 +636,16 @@ select q.*,
        a.final_score, a.priority, a.why_match, a.red_flags, a.score_breakdown, a.clay_summary,
        a.tech_stack, a.country, a.website, a.domain, a.employee_count, a.industry, a.status as account_status,
        c.title as contact_title, c.email as contact_email, c.email_status, c.linkedin_url as contact_linkedin,
-       c.contact_score, c.role_category
+       c.contact_score, c.role_category,
+       a.clay_trigger, a.clay_trigger_source, a.clay_trigger_date
 from outreach_queue q
 left join accounts a on a.account_id = q.account_id
 left join contacts c on c.contact_id = q.contact_id;
 
-create or replace view v_accounts as
+-- v_accounts selects a.*: when accounts gains columns, Postgres refuses to "replace" the view,
+-- so it is dropped and recreated (nothing depends on it; the console reads it on demand).
+drop view if exists v_accounts;
+create view v_accounts as
 select a.*,
        (select count(*)::int from contacts c where c.account_id = a.account_id) as contacts_count,
        (select count(*)::int from outreach_queue q
