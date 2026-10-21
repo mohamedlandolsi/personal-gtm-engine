@@ -6,6 +6,7 @@ import { requireSession } from "@/lib/session";
 import { displayState, httpUrl, timeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ChannelIcon, channelLabel } from "@/components/channel-icon";
+import { ClayTriggerFact } from "@/components/clay-trigger";
 import { FadeStatusChip } from "@/components/fade-status-chip";
 import { ReviewActions } from "@/components/review-actions";
 import { ScoreLedger } from "@/components/score-ledger";
@@ -47,6 +48,9 @@ type Draft = {
   llm_provider: string | null;
   risk_notes: string | null;
   run_date: Date | null;
+  clay_trigger: string | null;
+  clay_trigger_source: string | null;
+  clay_trigger_date: string | null;
 };
 
 type Event = {
@@ -192,6 +196,7 @@ export async function DraftDetail({ id, mode }: { id: string; mode: "page" | "pa
           <dl className="space-y-3">
             <Fact term="Angle" value={d.angle} />
             <Fact term="Trigger" value={d.trigger} />
+            <ClayTriggerFact trigger={d.clay_trigger} source={d.clay_trigger_source} date={d.clay_trigger_date} />
             <Fact term="Pain point" value={d.pain_point} />
             <Fact term="Value proposition" value={d.value_proposition} />
             <Fact term="Proof point" value={d.proof_point} />

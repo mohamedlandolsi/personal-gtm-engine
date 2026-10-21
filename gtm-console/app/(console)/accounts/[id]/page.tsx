@@ -6,6 +6,7 @@ import { requireSession } from "@/lib/session";
 import { STATE_RULE, displayState, httpUrl, timeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ChannelIcon } from "@/components/channel-icon";
+import { ClayTriggerFact } from "@/components/clay-trigger";
 import { ScoreLedger } from "@/components/score-ledger";
 import { ScoreMeter } from "@/components/score-meter";
 import { StatusChip } from "@/components/status-chip";
@@ -47,6 +48,9 @@ type Account = {
   contact_status: string | null;
   dashboard_dirty_at: Date | null;
   synced_at: Date | null;
+  clay_trigger: string | null;
+  clay_trigger_source: string | null;
+  clay_trigger_date: string | null;
   contacts_count: number;
   drafts_count: number;
 };
@@ -182,6 +186,11 @@ export default async function AccountPage({ params }: PageProps<"/accounts/[id]"
           ) : (
             <p className="text-ink-3">No Clay summary yet.</p>
           )}
+          {a.clay_trigger?.trim() ? (
+            <dl className="border-t pt-3">
+              <ClayTriggerFact trigger={a.clay_trigger} source={a.clay_trigger_source} date={a.clay_trigger_date} />
+            </dl>
+          ) : null}
         </Panel>
       </div>
 
