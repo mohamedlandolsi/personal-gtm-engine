@@ -14,38 +14,6 @@
     },
     {
       "parameters": {
-        "authentication": "serviceAccount",
-        "documentId": {
-          "__rl": true,
-          "value": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit?usp=sharing",
-          "mode": "url"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "gid=0",
-          "mode": "list",
-          "cachedResultName": "config",
-          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit#gid=0"
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.7,
-      "position": [
-        224,
-        224
-      ],
-      "id": "a6fd5b55-d7be-4228-887b-74341f05e2cd",
-      "name": "Fetch Config",
-      "executeOnce": true,
-      "credentials": {
-        "googleApi": {
-          "name": "Google Service Account account"
-        }
-      }
-    },
-    {
-      "parameters": {
         "jsCode": "const DEFAULTS = {\n  rev: 'personal-gtm-sprint1-unified',\n  enabled: true,\n  max_companies_per_run: 25,\n  min_account_score: 65,\n  priority_score: 80,\n  allow_agencies: true,\n  allow_startups: true,\n  allow_smb: true,\n  allow_enterprise: false,\n  timezone: {\n    allowed_utc_offsets: [0, 1, 2, 3, 4],\n    allow_unknown_timezone: false\n  },\n  company: {\n    employee_min: 2,\n    employee_max: 150,\n    must_have_domain: true,\n    industries_include: [],\n    industries_exclude: [],\n    keywords_include: [],\n    keywords_exclude: []\n  },\n  scoring: {\n    weights: {\n      icp_fit: 0.35,\n      budget_proxy: 0.25,\n      automation_need: 0.25,\n      timezone_fit: 0.15\n    },\n    vertical_boost: {\n      enabled: true,\n      bonus: 5,\n      keywords: []\n    }\n  }\n};\n\nconst rows = $('Fetch Config').all().map(i => i.json);\nconst row = rows.find(r => String(r.key || '').trim().toLowerCase() === 'config_json');\n\nlet warnings = [];\nlet config = JSON.parse(JSON.stringify(DEFAULTS));\n\nif (row && row.value) {\n  try {\n    const parsed = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;\n\n    config = {\n      ...config,\n      ...parsed,\n      timezone: {\n        ...config.timezone,\n        ...(parsed.timezone || {})\n      },\n      company: {\n        ...config.company,\n        ...(parsed.company || {})\n      },\n      scoring: {\n        ...config.scoring,\n        ...(parsed.scoring || {}),\n        weights: {\n          ...config.scoring.weights,\n          ...((parsed.scoring || {}).weights || {})\n        },\n        vertical_boost: {\n          ...config.scoring.vertical_boost,\n          ...((parsed.scoring || {}).vertical_boost || {})\n        }\n      }\n    };\n  } catch (e) {\n    warnings.push('config_json invalid: ' + String(e.message || e));\n  }\n} else {\n  warnings.push('config_json missing; using defaults');\n}\n\nreturn [{ json: { config, warnings } }];"
       },
       "type": "n8n-nodes-base.code",
@@ -2509,7 +2477,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const safeAll = (name) => { try { return $(name).all().map(i => i.json); } catch (e) { return []; } };\nconst cfg = $('Load Config').first().json.config || {};\nconst K = cfg.contact || {};\n// Input is Select Contact Batch (carries the stats item). Person rows and seen keys are read by name,\n// so the seen-guard sees them on every run.\nconst items = [...$input.all().map(i => i.json), ...safeAll('Fetch Contact Results'), ...safeAll('Fetch Seen Contacts')];\nconst statsItem = items.find(r => r && r.__row_type === 'stats');\nconst personRows = items.filter(r => r && !r.__row_type && String(r.full_name || '').trim() && r.domain);\nconst seenRows = items.filter(r => r && r.contact_key !== undefined && r.account_domain !== undefined);\n\nconst base = statsItem ? JSON.parse(JSON.stringify(statsItem)) : { __row_type: 'stats', stats: {} };\nbase.stats = base.stats || {};\nbase.stats.contacts = base.stats.contacts || { queued: 0, discovered: 0, written: 0, rejected: {} };\nconst stats = base.stats.contacts;\nstats.discovered = personRows.length;\nconst rej = (k) => { stats.rejected[k] = (stats.rejected[k] || 0) + 1; };\n\nconst EXCLUDE = (K.roles_exclude || []).map(s => String(s).toLowerCase());\nconst GENERIC = (K.generic_email_prefixes || []);\nconst minContact = Number(K.min_contact_score || 60);\nconst maxPerCompany = Math.max(1, Number(K.max_contacts_per_company || 3));\nconst smallThreshold = Number(K.small_team_threshold || 50);\nconst preferFounder = K.prefer_founder_for_small_teams !== false;\nconst requireContact = K.require_email_or_linkedin !== false;\nconst allowedTz = (cfg.timezone || {}).allowed_utc_offsets || [0, 1, 2, 3, 4];\nconst acctByDomain = {};\nfor (const a of (base.stats.all_qualified || [])) acctByDomain[String(a.domain || '').toLowerCase()] = a;\n// Accounts that already left the in-flight list still need their facts here,\n// otherwise a contact added later loses its timezone points and scores too low to be drafted.\nfor (const a of safeAll('Fetch Qualified Accounts')) {\n  const d = String((a && a.domain) || '').toLowerCase();\n  if (d && a.account_id && !acctByDomain[d]) acctByDomain[d] = a;\n}\n\nfunction roleCategory(title) {\n  const t = String(title || '').toLowerCase();\n  if (/\\b(?:co-?)?founder\\b|founding partner/.test(t)) return 'founder';\n  if (/\\bceo\\b|chief executive/.test(t)) return 'ceo';\n  if (/\\bcto\\b|chief technology/.test(t)) return 'cto';\n  if (/revops|revenue operations/.test(t)) return 'revops';\n  if (/sales ops|sales operations/.test(t)) return 'salesops';\n  if (/marketing ops|marketing operations|marops/.test(t)) return 'mktops';\n  if (/head of sales|vp sales|vice president of sales|sales director|director of sales|chief revenue officer|\\bcro\\b/.test(t)) return 'sales';\n  if (/head of growth|growth lead/.test(t)) return 'growth';\n  if (/head of operations|operations lead|ops lead/.test(t)) return 'ops';\n  if (/client delivery/.test(t)) return 'delivery';\n  if (/head of marketing|marketing lead|\\bcmo\\b/.test(t)) return 'mkt';\n  if (/\\bgtm\\b|go-to-market/.test(t)) return 'gtm';\n  if (/automation/.test(t)) return 'automation';\n  return 'other';\n}\nconst RA = { founder: 100, ceo: 100, cto: 95, revops: 90, salesops: 85, sales: 85, ops: 85, automation: 85, gtm: 80, growth: 80, delivery: 80, mktops: 75, mkt: 75, other: 40, generic: 0 };\nconst REL = { founder: 85, ceo: 85, cto: 80, revops: 100, salesops: 100, mktops: 100, automation: 100, gtm: 90, sales: 75, growth: 75, ops: 80, delivery: 70, mkt: 75, other: 40, generic: 10 };\n\nconst seenKeys = new Set(seenRows.map(r => String(r.contact_key || '').toLowerCase()).filter(k => k && k !== '__placeholder__'));\nconst runKeys = new Set();\nconst built = [];\n\nfor (const p of personRows) {\n  const domain = String(p.domain || '').toLowerCase().trim();\nconst rawEmail = String(p.email || '').trim().toLowerCase();\nconst email = (/not_unlocked|@domain\\.com$/.test(rawEmail)) ? '' : rawEmail;\n  const linkedin = String(p.person_linkedin || p.linkedin_url || '').trim();\n  const name = String(p.full_name || '').trim();\n  const title = String(p.title || '').trim();\n  let role = roleCategory(title);\n\n  if (EXCLUDE.some(x => title.toLowerCase().includes(x))) { rej('excluded_role'); continue; }\n  if (email && GENERIC.some(g => email.startsWith(g))) role = 'generic';\n  if (role === 'generic') { rej('generic_email'); continue; }\n  if (requireContact && !email && !linkedin) { rej('no_contact_point'); continue; }\n\n  const key = email ? 'em:' + email : (linkedin ? 'li:' + linkedin.toLowerCase() : 'nm:' + name.toLowerCase() + '@' + domain);\n  if (seenKeys.has(key) || runKeys.has(key)) { rej('seen'); continue; }\n  runKeys.add(key);\n\n  const est = String(p.email_status || '').toLowerCase();\n  const emailStatus = email ? ((est === 'verified' || est === 'valid') ? 'verified' : 'guessed') : 'not_found';\n  const ec = emailStatus === 'verified' ? 100 : (emailStatus === 'guessed' ? 30 : 0);\n  const li = linkedin ? 100 : 0;\n  const acct = acctByDomain[domain] || {};\n  const tzOff = acct.timezone_utc_offset;\n  const tzFit = (tzOff === null || tzOff === undefined || tzOff === '') ? 0 : (allowedTz.includes(Number(tzOff)) ? 100 : 0);\n\n  const score = Math.round(0.35 * (RA[role] || 40) + 0.25 * (REL[role] || 40) + 0.20 * ec + 0.10 * li + 0.10 * tzFit);\n  if (score < minContact) { rej('below_min'); continue; }\n\n  const confidence = Math.min(90, (emailStatus === 'verified' ? 70 : emailStatus === 'guessed' ? 50 : 40) + (linkedin ? 10 : 0) + (['founder', 'ceo', 'revops'].includes(role) ? 10 : 0));\n\n  built.push({\n    account_id: p.account_id || acct.account_id || '',\n    domain, name, title, role, email, emailStatus, linkedin, score, confidence,\n    provider: String(p.provider || 'clay_waterfall').toLowerCase(),\n    emp: Number(acct.employee_count || 0)\n  });\n}\n\n// Per-account cap with founder preference for small teams\nconst byAcct = {};\nfor (const c of built) (byAcct[c.account_id] = byAcct[c.account_id] || []).push(c);\nconst out = [];\nfor (const aid of Object.keys(byAcct)) {\n  let list = byAcct[aid].sort((a, b) => b.score - a.score);\n  const small = list.length && list[0].emp > 0 && list[0].emp <= smallThreshold;\n  if (small && preferFounder) {\n    list = list.sort((a, b) => {\n      const fa = ['founder', 'ceo'].includes(a.role) ? 1 : 0;\n      const fb = ['founder', 'ceo'].includes(b.role) ? 1 : 0;\n      return fb - fa || b.score - a.score;\n    });\n  }\n  list.slice(0, maxPerCompany).forEach(c => out.push(c));\n  Math.max(0, list.length - maxPerCompany) && (stats.rejected.over_cap = (stats.rejected.over_cap || 0) + (list.length - maxPerCompany));\n}\n\nconst contactRows = out.map(c => ({\n  json: {\n    run_date: new Date().toISOString(),\n    contact_id: 'ct_' + (c.domain + '_' + (c.email || c.name)).toLowerCase().replace(/[^a-z0-9]+/g, '_'),\n    account_id: c.account_id,\n    company_name: (acctByDomain[c.domain] || {}).company_name || c.domain,\n    domain: c.domain,\n    full_name: c.name,\n    title: c.title,\n    role_category: c.role,\n    email: c.email,\n    email_status: c.emailStatus,\n    linkedin_url: c.linkedin,\n    phone: '',\n    source: c.provider,\n    confidence: c.confidence,\n    contact_score: c.score,\n    preferred_channel: c.email ? 'email' : 'linkedin_manual',\n    status: 'new',\n    contact_key: c.email ? 'em:' + c.email : (c.linkedin ? 'li:' + c.linkedin.toLowerCase() : 'nm:' + c.name.toLowerCase() + '@' + c.domain),\n    account_domain: c.domain\n  }\n}));\nstats.written = contactRows.length;\nreturn contactRows.concat([{ json: base }]);"
+        "jsCode": "const safeAll = (name) => { try { return $(name).all().map(i => i.json); } catch (e) { return []; } };\nconst cfg = $('Load Config').first().json.config || {};\nconst K = cfg.contact || {};\n// Input is Select Contact Batch (carries the stats item). Person rows and seen keys are read by name,\n// so the seen-guard sees them on every run.\nconst items = [...$input.all().map(i => i.json), ...safeAll('Fetch Contact Results'), ...safeAll('Fetch Seen Contacts')];\nconst statsItem = items.find(r => r && r.__row_type === 'stats');\nconst personRows = items.filter(r => r && !r.__row_type && String(r.full_name || '').trim() && r.domain);\nconst seenRows = items.filter(r => r && r.contact_key !== undefined && r.account_domain !== undefined);\n\nconst base = statsItem ? JSON.parse(JSON.stringify(statsItem)) : { __row_type: 'stats', stats: {} };\nbase.stats = base.stats || {};\nbase.stats.contacts = base.stats.contacts || { queued: 0, discovered: 0, written: 0, rejected: {} };\nconst stats = base.stats.contacts;\nstats.discovered = personRows.length;\nconst rej = (k) => { stats.rejected[k] = (stats.rejected[k] || 0) + 1; };\n\nconst EXCLUDE = (K.roles_exclude || []).map(s => String(s).toLowerCase());\nconst GENERIC = (K.generic_email_prefixes || []);\nconst minContact = Number(K.min_contact_score || 60);\nconst maxPerCompany = Math.max(1, Number(K.max_contacts_per_company || 3));\nconst smallThreshold = Number(K.small_team_threshold || 50);\nconst preferFounder = K.prefer_founder_for_small_teams !== false;\nconst requireContact = K.require_email_or_linkedin !== false;\nconst allowedTz = (cfg.timezone || {}).allowed_utc_offsets || [0, 1, 2, 3, 4];\nconst acctByDomain = {};\nfor (const a of (base.stats.all_qualified || [])) acctByDomain[String(a.domain || '').toLowerCase()] = a;\n// Accounts that already left the in-flight list still need their facts here,\n// otherwise a contact added later loses its timezone points and scores too low to be drafted.\nfor (const a of safeAll('Fetch Qualified Accounts')) {\n  const d = String((a && a.domain) || '').toLowerCase();\n  if (d && a.account_id && !acctByDomain[d]) acctByDomain[d] = a;\n}\n\nfunction roleCategory(title) {\n  const t = String(title || '').toLowerCase();\n  if (/\\b(?:co-?)?founder\\b|founding partner/.test(t)) return 'founder';\n  if (/\\bceo\\b|chief executive/.test(t)) return 'ceo';\n  // Non-English and general-manager titles at small companies are the top decision maker (Sprint 11, 11.3: IDL Consulting)\n  if (/\\b(?:co-?)?fundador(?:a)?\\b|\\b(?:co-?)?fondat(?:eur|rice)\\b|\\b(?:co-?)?gr.nder(?:in)?\\b/.test(t)) return 'founder';\n  if (/general manager|managing director|director(?:a)? general|\\bgerente\\b|gesch.ftsf.hrer(?:in)?|directeur g.n.ral/.test(t)) return 'ceo';\n  if (/\\bcto\\b|chief technology/.test(t)) return 'cto';\n  if (/revops|revenue operations/.test(t)) return 'revops';\n  if (/sales ops|sales operations/.test(t)) return 'salesops';\n  if (/marketing ops|marketing operations|marops/.test(t)) return 'mktops';\n  if (/head of sales|vp sales|vice president of sales|sales director|director of sales|chief revenue officer|\\bcro\\b/.test(t)) return 'sales';\n  if (/head of growth|growth lead/.test(t)) return 'growth';\n  if (/head of operations|operations lead|ops lead|chief operating officer|\\bcoo\\b|operations director|director of operations|director(?:a)? de operaciones/.test(t)) return 'ops';\n  if (/client delivery/.test(t)) return 'delivery';\n  if (/head of marketing|marketing lead|\\bcmo\\b/.test(t)) return 'mkt';\n  if (/\\bgtm\\b|go-to-market/.test(t)) return 'gtm';\n  if (/automation/.test(t)) return 'automation';\n  return 'other';\n}\nconst RA = { founder: 100, ceo: 100, cto: 95, revops: 90, salesops: 85, sales: 85, ops: 85, automation: 85, gtm: 80, growth: 80, delivery: 80, mktops: 75, mkt: 75, other: 40, generic: 0 };\nconst REL = { founder: 85, ceo: 85, cto: 80, revops: 100, salesops: 100, mktops: 100, automation: 100, gtm: 90, sales: 75, growth: 75, ops: 80, delivery: 70, mkt: 75, other: 40, generic: 10 };\n\nconst seenKeys = new Set(seenRows.map(r => String(r.contact_key || '').toLowerCase()).filter(k => k && k !== '__placeholder__'));\nconst runKeys = new Set();\nconst built = [];\n\nfor (const p of personRows) {\n  const domain = String(p.domain || '').toLowerCase().trim();\nconst rawEmail = String(p.email || '').trim().toLowerCase();\nconst email = (/not_unlocked|@domain\\.com$/.test(rawEmail)) ? '' : rawEmail;\n  const linkedin = String(p.person_linkedin || p.linkedin_url || '').trim();\n  const name = String(p.full_name || '').trim();\n  const title = String(p.title || '').trim();\n  let role = roleCategory(title);\n\n  if (EXCLUDE.some(x => title.toLowerCase().includes(x))) { rej('excluded_role'); continue; }\n  if (email && GENERIC.some(g => email.startsWith(g))) role = 'generic';\n  if (role === 'generic') { rej('generic_email'); continue; }\n  if (requireContact && !email && !linkedin) { rej('no_contact_point'); continue; }\n\n  const key = email ? 'em:' + email : (linkedin ? 'li:' + linkedin.toLowerCase() : 'nm:' + name.toLowerCase() + '@' + domain);\n  if (seenKeys.has(key) || runKeys.has(key)) { rej('seen'); continue; }\n  runKeys.add(key);\n\n  const est = String(p.email_status || '').toLowerCase();\n  const emailStatus = email ? ((est === 'verified' || est === 'valid') ? 'verified' : 'guessed') : 'not_found';\n  const ec = emailStatus === 'verified' ? 100 : (emailStatus === 'guessed' ? 30 : 0);\n  const li = linkedin ? 100 : 0;\n  const acct = acctByDomain[domain] || {};\n  const tzOff = acct.timezone_utc_offset;\n  const tzFit = (tzOff === null || tzOff === undefined || tzOff === '') ? 0 : (allowedTz.includes(Number(tzOff)) ? 100 : 0);\n\n  const score = Math.round(0.35 * (RA[role] || 40) + 0.25 * (REL[role] || 40) + 0.20 * ec + 0.10 * li + 0.10 * tzFit);\n  if (score < minContact) { rej('below_min'); continue; }\n\n  const confidence = Math.min(90, (emailStatus === 'verified' ? 70 : emailStatus === 'guessed' ? 50 : 40) + (linkedin ? 10 : 0) + (['founder', 'ceo', 'revops'].includes(role) ? 10 : 0));\n\n  built.push({\n    account_id: p.account_id || acct.account_id || '',\n    domain, name, title, role, email, emailStatus, linkedin, score, confidence,\n    provider: String(p.provider || 'clay_waterfall').toLowerCase(),\n    emp: Number(acct.employee_count || 0)\n  });\n}\n\n// Per-account cap with founder preference for small teams\nconst byAcct = {};\nfor (const c of built) (byAcct[c.account_id] = byAcct[c.account_id] || []).push(c);\nconst out = [];\nfor (const aid of Object.keys(byAcct)) {\n  let list = byAcct[aid].sort((a, b) => b.score - a.score);\n  const small = list.length && list[0].emp > 0 && list[0].emp <= smallThreshold;\n  if (small && preferFounder) {\n    list = list.sort((a, b) => {\n      const fa = ['founder', 'ceo'].includes(a.role) ? 1 : 0;\n      const fb = ['founder', 'ceo'].includes(b.role) ? 1 : 0;\n      return fb - fa || b.score - a.score;\n    });\n  }\n  list.slice(0, maxPerCompany).forEach(c => out.push(c));\n  Math.max(0, list.length - maxPerCompany) && (stats.rejected.over_cap = (stats.rejected.over_cap || 0) + (list.length - maxPerCompany));\n}\n\nconst contactRows = out.map(c => ({\n  json: {\n    run_date: new Date().toISOString(),\n    contact_id: 'ct_' + (c.domain + '_' + (c.email || c.name)).toLowerCase().replace(/[^a-z0-9]+/g, '_'),\n    account_id: c.account_id,\n    company_name: (acctByDomain[c.domain] || {}).company_name || c.domain,\n    domain: c.domain,\n    full_name: c.name,\n    title: c.title,\n    role_category: c.role,\n    email: c.email,\n    email_status: c.emailStatus,\n    linkedin_url: c.linkedin,\n    phone: '',\n    source: c.provider,\n    confidence: c.confidence,\n    contact_score: c.score,\n    preferred_channel: c.email ? 'email' : 'linkedin_manual',\n    status: 'new',\n    contact_key: c.email ? 'em:' + c.email : (c.linkedin ? 'li:' + c.linkedin.toLowerCase() : 'nm:' + c.name.toLowerCase() + '@' + c.domain),\n    account_domain: c.domain\n  }\n}));\nstats.written = contactRows.length;\nreturn contactRows.concat([{ json: base }]);"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -3819,42 +3787,7 @@
     },
     {
       "parameters": {
-        "authentication": "serviceAccount",
-        "documentId": {
-          "__rl": true,
-          "value": "YOUR_SPREADSHEET_ID",
-          "mode": "list",
-          "cachedResultName": "personal-gtm-engine",
-          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit?usp=drivesdk"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": 1756566230,
-          "mode": "list",
-          "cachedResultName": "outreach_queue",
-          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit#gid=1756566230"
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.7,
-      "position": [
-        5824,
-        896
-      ],
-      "id": "3850d11a-a175-44df-8f98-9759b8cad323",
-      "name": "Fetch Outreach Queue",
-      "executeOnce": true,
-      "alwaysOutputData": true,
-      "credentials": {
-        "googleApi": {
-          "name": "Google Service Account account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "const safeAll = (name) => { try { return $(name).all().map(i => i.json); } catch (e) { return []; } };\nconst cfg = $('Load Config').first().json.config || {};\nconst O = cfg.outreach || {};\nconst C = cfg.contact || {};\n\nconst statsRows = safeAll('Rescore Accounts').filter(r => r && r.__row_type === 'stats');\nconst base = statsRows.length ? JSON.parse(JSON.stringify(statsRows[0])) : { __row_type: 'stats', stats: {} };\nbase.stats = base.stats || {};\nconst finish = (pairs, o) => {\n  base.stats.outreach = Object.assign({ pairs: pairs.length, drafted: 0, llm_calls: 0, llm_failures: 0 }, o || {});\n  return pairs.concat([{ json: base }]);\n};\n\n// Gate 0: kill switch (stats item still travels so Run Stats never dies)\nif (O.enabled === false || (O.llm && O.llm.enabled === false)) return finish([], { skipped: 'outreach disabled by config' });\n\nconst minAcct = Number(O.min_account_score || cfg.min_account_score || 65);\nconst minContact = Number(O.min_contact_score || C.min_contact_score || 60);\nconst perRun = Math.max(1, Number(O.max_pairs_per_run || 4));\nconst perDay = Math.max(1, Number(O.max_per_day || 10));\n// How many people at one company may have a live draft at the same time. 1 = never message two founders at once.\nconst perAccount = Math.max(1, Number(O.max_contacts_per_account || 1));\nconst verified = (O.email_verified_statuses || ['verified', 'valid']).map(s => String(s).toLowerCase());\nconst allowGuessed = O.allow_guessed_email_channel === true;\nconst genericPrefixes = (C.generic_email_prefixes || []).map(s => String(s).toLowerCase());\nconst rolesExclude = (C.roles_exclude || []).map(s => String(s).toLowerCase());\n\n// Queue = the ledger. 'superseded' rows no longer block a re-draft.\nconst queue = safeAll('Fetch Outreach Queue').filter(r => r && r.contact_id);\nconst statusOf = r => String(r.approval_status || '').toLowerCase();\nconst doneSet = new Set(queue.filter(r => statusOf(r) !== 'superseded').map(r => String(r.contact_id)));\nconst today = new Date().toISOString().slice(0, 10);\nconst draftedToday = queue.filter(r => String(r.run_date || '').slice(0, 10) === today && statusOf(r) !== 'superseded').length;\nconst room = perDay - draftedToday;\nif (room <= 0) return finish([], { skipped: 'daily cap reached (' + draftedToday + '/' + perDay + ')' });\nconst cap = Math.min(perRun, room);\n\n// Live drafts per company: anything not superseded and not rejected (pending, edited, approved, sent).\nconst liveByAccount = {};\nfor (const r of queue) {\n  const st = statusOf(r);\n  if (st === 'superseded' || st === 'rejected') continue;\n  const k = String(r.account_id || '');\n  if (k) liveByAccount[k] = (liveByAccount[k] || 0) + 1;\n}\n\nconst accounts = {};\nfor (const a of safeAll('Fetch Accounts For Outreach')) if (a && a.account_id) accounts[String(a.account_id)] = a;\n\nconst sk = { account: 0, rejected: 0, role: 0, channel: 0, per_account: 0 };\nconst pairs = [];\n// Best account first, then best contact inside it, so the per-company cap keeps the strongest person.\nconst contacts = safeAll('Fetch Contacts For Outreach')\n  .filter(c => c && c.contact_id && String(c.status || 'new') === 'new' && Number(c.contact_score || 0) >= minContact && !doneSet.has(String(c.contact_id)))\n  .sort((a, b) =>\n    Number((accounts[String(b.account_id)] || {}).final_score || 0) - Number((accounts[String(a.account_id)] || {}).final_score || 0) ||\n    Number(b.contact_score || 0) - Number(a.contact_score || 0));\n\nfor (const c of contacts) {\n  const a = accounts[String(c.account_id || '')];\n  if (!a || String(a.contact_status || '') !== 'contacts_done' || Number(a.final_score || 0) < minAcct) { sk.account++; continue; }\n  if (String(a.status || '').toLowerCase() === 'rejected') { sk.rejected++; continue; }\n  if ((liveByAccount[String(a.account_id)] || 0) >= perAccount) { sk.per_account++; continue; }\n  const title = String(c.title || '').toLowerCase();\n  if (rolesExclude.some(r => title.includes(r))) { sk.role++; continue; }\n\n  const email = String(c.email || '').trim().toLowerCase();\n  const isGeneric = genericPrefixes.some(p => email.startsWith(p));\n  const emailStatus = String(c.email_status || '').toLowerCase();\n  const emailOk = !!email && !isGeneric;\n  const flags = [];\n    // The finder could not confirm this person works at this company (name match only)\n  if (/unverified/i.test(String(c.source || ''))) flags.push('contact_unverified');\n  let channel = '';\n  if (emailOk && verified.includes(emailStatus)) channel = 'email';\n  else if (String(c.linkedin_url || '').trim()) { channel = 'linkedin_manual'; if (emailOk) flags.push('email_' + (emailStatus || 'unknown') + '_not_used'); }\n  else if (emailOk && allowGuessed) { channel = 'email'; flags.push('email_unverified'); }\n  if (!channel) { sk.channel++; continue; }\n\n  liveByAccount[String(a.account_id)] = (liveByAccount[String(a.account_id)] || 0) + 1;\n  pairs.push({ json: {\n    outreach_pair: true, channel, flags: flags.join(','),\n    contact_id: c.contact_id, account_id: a.account_id,\n    company_name: a.company_name || c.company_name, domain: c.domain || a.domain,\n    industry: a.industry, employee_count: a.employee_count, funding_stage: a.funding_stage,\n    tech_stack: a.tech_stack, clay_summary: a.clay_summary, why_match: a.why_match, account_score: a.final_score,\n    full_name: c.full_name, title: c.title, role_category: c.role_category,\n    email: c.email, linkedin_url: c.linkedin_url, contact_score: c.contact_score\n  } });\n  if (pairs.length >= cap) break;\n}\nreturn finish(pairs, { skipped_account_not_done: sk.account, skipped_account_rejected: sk.rejected, skipped_per_account_cap: sk.per_account, skipped_role: sk.role, skipped_no_safe_channel: sk.channel, drafted_today_before: draftedToday });"
+        "jsCode": "const safeAll = (name) => { try { return $(name).all().map(i => i.json); } catch (e) { return []; } };\nconst cfg = $('Load Config').first().json.config || {};\nconst O = cfg.outreach || {};\nconst C = cfg.contact || {};\n\nconst statsRows = safeAll('Rescore Accounts').filter(r => r && r.__row_type === 'stats');\nconst base = statsRows.length ? JSON.parse(JSON.stringify(statsRows[0])) : { __row_type: 'stats', stats: {} };\nbase.stats = base.stats || {};\nconst finish = (pairs, o) => {\n  base.stats.outreach = Object.assign({ pairs: pairs.length, drafted: 0, llm_calls: 0, llm_failures: 0 }, o || {});\n  return pairs.concat([{ json: base }]);\n};\n\n// Gate 0: kill switch (stats item still travels so Run Stats never dies)\nif (O.enabled === false || (O.llm && O.llm.enabled === false)) return finish([], { skipped: 'outreach disabled by config' });\n\nconst minAcct = Number(O.min_account_score || cfg.min_account_score || 65);\nconst minContact = Number(O.min_contact_score || C.min_contact_score || 60);\nconst perRun = Math.max(1, Number(O.max_pairs_per_run || 4));\nconst perDay = Math.max(1, Number(O.max_per_day || 10));\n// How many people at one company may have a live draft at the same time. 1 = never message two founders at once.\nconst perAccount = Math.max(1, Number(O.max_contacts_per_account || 1));\nconst verified = (O.email_verified_statuses || ['verified', 'valid']).map(s => String(s).toLowerCase());\nconst allowGuessed = O.allow_guessed_email_channel === true;\nconst genericPrefixes = (C.generic_email_prefixes || []).map(s => String(s).toLowerCase());\nconst rolesExclude = (C.roles_exclude || []).map(s => String(s).toLowerCase());\n\n// Queue = the ledger. 'superseded' rows no longer block a re-draft.\nconst queue = safeAll('Fetch Outreach Queue').filter(r => r && r.contact_id);\nconst statusOf = r => String(r.approval_status || '').toLowerCase();\nconst doneSet = new Set(queue.filter(r => statusOf(r) !== 'superseded').map(r => String(r.contact_id)));\nconst today = new Date().toISOString().slice(0, 10);\nconst draftedToday = queue.filter(r => String(r.run_date || '').slice(0, 10) === today && statusOf(r) !== 'superseded').length;\nconst room = perDay - draftedToday;\nif (room <= 0) return finish([], { skipped: 'daily cap reached (' + draftedToday + '/' + perDay + ')' });\nconst cap = Math.min(perRun, room);\n\n// Live drafts per company: anything not superseded and not rejected (pending, edited, approved, sent).\nconst liveByAccount = {};\nfor (const r of queue) {\n  const st = statusOf(r);\n  if (st === 'superseded' || st === 'rejected') continue;\n  const k = String(r.account_id || '');\n  if (k) liveByAccount[k] = (liveByAccount[k] || 0) + 1;\n}\n\nconst accounts = {};\nfor (const a of safeAll('Fetch Accounts For Outreach')) if (a && a.account_id) accounts[String(a.account_id)] = a;\n\nconst sk = { account: 0, rejected: 0, role: 0, channel: 0, per_account: 0 };\nconst pairs = [];\n// Best account first, then best contact inside it, so the per-company cap keeps the strongest person.\nconst contacts = safeAll('Fetch Contacts For Outreach')\n  .filter(c => c && c.contact_id && String(c.status || 'new') === 'new' && Number(c.contact_score || 0) >= minContact && !doneSet.has(String(c.contact_id)))\n  .sort((a, b) =>\n    Number((accounts[String(b.account_id)] || {}).final_score || 0) - Number((accounts[String(a.account_id)] || {}).final_score || 0) ||\n    Number(b.contact_score || 0) - Number(a.contact_score || 0));\n\nfor (const c of contacts) {\n  const a = accounts[String(c.account_id || '')];\n  if (!a || String(a.contact_status || '') !== 'contacts_done' || Number(a.final_score || 0) < minAcct) { sk.account++; continue; }\n  if (String(a.status || '').toLowerCase() === 'rejected') { sk.rejected++; continue; }\n  if ((liveByAccount[String(a.account_id)] || 0) >= perAccount) { sk.per_account++; continue; }\n  const title = String(c.title || '').toLowerCase();\n  if (rolesExclude.some(r => title.includes(r))) { sk.role++; continue; }\n\n  const email = String(c.email || '').trim().toLowerCase();\n  const isGeneric = genericPrefixes.some(p => email.startsWith(p));\n  const emailStatus = String(c.email_status || '').toLowerCase();\n  const emailOk = !!email && !isGeneric;\n  const flags = [];\n    // The finder could not confirm this person works at this company (name match only)\n  if (/unverified/i.test(String(c.source || ''))) flags.push('contact_unverified');\n  let channel = '';\n  if (emailOk && verified.includes(emailStatus)) channel = 'email';\n  else if (String(c.linkedin_url || '').trim()) { channel = 'linkedin_manual'; if (emailOk) flags.push('email_' + (emailStatus || 'unknown') + '_not_used'); }\n  else if (emailOk && allowGuessed) { channel = 'email'; flags.push('email_unverified'); }\n  if (!channel) { sk.channel++; continue; }\n\n  liveByAccount[String(a.account_id)] = (liveByAccount[String(a.account_id)] || 0) + 1;\n  pairs.push({ json: {\n    outreach_pair: true, channel, flags: flags.join(','),\n    contact_id: c.contact_id, account_id: a.account_id,\n    company_name: a.company_name || c.company_name, domain: c.domain || a.domain,\n    industry: a.industry, employee_count: a.employee_count, funding_stage: a.funding_stage,\n    tech_stack: a.tech_stack, clay_summary: a.clay_summary, why_match: a.why_match, account_score: a.final_score,\n    clay_trigger: a.clay_trigger || '', clay_trigger_source: a.clay_trigger_source || '',\n    full_name: c.full_name, title: c.title, role_category: c.role_category,\n    email: c.email, linkedin_url: c.linkedin_url, contact_score: c.contact_score\n  } });\n  if (pairs.length >= cap) break;\n}\nreturn finish(pairs, { skipped_account_not_done: sk.account, skipped_account_rejected: sk.rejected, skipped_per_account_cap: sk.per_account, skipped_role: sk.role, skipped_no_safe_channel: sk.channel, drafted_today_before: draftedToday });"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -3934,7 +3867,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const cfg = $('Load Config').first().json.config || {};\nconst O = cfg.outreach || {};\nconst L = O.llm || {};\nconst pairs = $input.all().map(i => i.json).filter(r => r && r.outreach_pair === true);\nif (!pairs.length) return [];\n\n// ---------- settings (all overridable from config.outreach.llm) ----------\nconst T0 = Date.now();\nconst TIMEOUT = Math.max(5000, Number(L.timeout_ms || 40000));\nconst TEMP = Number(L.temperature ?? 0.3);\nconst PACE_MS = Math.max(0, Number(L.politeness_ms ?? 6000));          // pause between drafts\nconst MAX_OUT = Math.max(600, Number(L.max_output_tokens || 1500));    // includes reasoning tokens\nconst MAX_WAIT_S = Math.max(0, Number(L.max_wait_s ?? 20));            // longest single wait on a 429\nlet WAIT_BUDGET_MS = Math.max(0, Number(L.wait_budget_ms ?? 90000));   // total 429 waiting per run\nconst RUN_BUDGET_MS = Math.max(60000, Number(L.run_budget_ms || 240000)); // stay under the Code node time limit\nconst SITE = Object.assign({ enabled: true, timeout_ms: 8000 }, O.site_facts || {});\n\nconst SENDER = String(O.sender_name || 'Mohamed');\nconst CTA = String(O.cta || 'Open to a 2-minute workflow example relevant to your stack?');\nconst PROOFS = (O.proof_points && O.proof_points.length) ? O.proof_points : ['Built a federated B2B GTM SaaS platform with FastAPI, Supabase and LLM routing'];\nconst WATCH = (O.tool_watchlist || ['hubspot','salesforce','pipedrive','shopify','stripe','intercom','calendly','google analytics','zapier','slack','mixpanel','snowflake','zendesk','marketo','salesloft','airtable']).map(s => String(s).toLowerCase());\nconst W = { total: [Number((O.words || {}).min || 70), Number((O.words || {}).max || 120)], note: [20, 40] };\n\nconst sleep = ms => new Promise(r => setTimeout(r, ms));\nconst wc = s => String(s || '').trim().split(/\\s+/).filter(Boolean).length;\nconst norm = s => String(s == null ? '' : s).replace(/[\\u2010\\u2011\\u2012\\u2013]/g, '-').replace(/\\s*\\u2014\\s*/g, ' - ').replace(/[\\u2018\\u2019]/g, \"'\").replace(/[\\u201C\\u201D]/g, '\"').replace(/\\s+\\n/g, '\\n').replace(/[ ]{2,}/g, ' ').trim();\nconst has = (hay, needle) => new RegExp('(^|[^a-z0-9])' + needle.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&') + '([^a-z0-9]|$)', 'i').test(hay);\n\n// ---------- provider registry ----------\n// Every provider except Gemini speaks the OpenAI chat format, so adding one is a line of config, not new code.\nconst PRESETS = {\n  groq:       { kind: 'openai', url: 'https://api.groq.com/openai/v1/chat/completions', key: 'GROQ_API_KEY',       model: L.groq_model || 'openai/gpt-oss-120b' },\n  mistral:    { kind: 'openai', url: 'https://api.mistral.ai/v1/chat/completions',      key: 'MISTRAL_API_KEY',    model: L.mistral_model || 'mistral-small-latest' },\n  cerebras:   { kind: 'openai', url: 'https://api.cerebras.ai/v1/chat/completions',     key: 'CEREBRAS_API_KEY',   model: L.cerebras_model || 'gpt-oss-120b' },\n  openrouter: { kind: 'openai', url: 'https://openrouter.ai/api/v1/chat/completions',   key: 'OPENROUTER_API_KEY', model: L.openrouter_model || '' },\n  gemini:     { kind: 'gemini', url: 'https://generativelanguage.googleapis.com/v1beta/models/', key: 'GEMINI_API_KEY', model: L.gemini_model || 'gemini-3.8-flash' }\n};\n// Optional extra providers from config: outreach.llm.providers = { \"name\": { \"url\": \"...\", \"key_env\": \"NAME_API_KEY\", \"model\": \"...\" } }\nfor (const [name, p] of Object.entries(L.providers || {})) {\n  if (p && p.url && p.key_env) PRESETS[String(name).toLowerCase()] = { kind: p.kind === 'gemini' ? 'gemini' : 'openai', url: String(p.url), key: String(p.key_env), model: String(p.model || '') };\n}\n\n// A chain entry is \"provider\" or \"provider:model\". The second form lets one key use two models,\n// and each model has its own rate limit bucket.\nconst parseStep = (entry) => {\n  const s = String(entry || '').trim();\n  const i = s.indexOf(':');\n  const name = (i === -1 ? s : s.slice(0, i)).toLowerCase();\n  const preset = PRESETS[name];\n  if (!preset) return { id: s, error: 'unknown' };\n  const model = i === -1 ? preset.model : s.slice(i + 1).trim();\n  if (!model) return { id: s, error: 'no_model' };\n  return { id: i === -1 ? name : name + ':' + model, name, model, kind: preset.kind, url: preset.url, key: preset.key };\n};\nconst CHAIN = (Array.isArray(L.chain) && L.chain.length ? L.chain : ['groq', 'gemini', 'template'])\n  .filter(s => String(s).toLowerCase() !== 'template').map(parseStep);\n\n// Per-model extras that cut token use. If a provider rejects them (HTTP 400), the call is retried once without them.\nconst extrasFor = (step) => {\n  const m = step.model.toLowerCase();\n  const x = {};\n  if (step.name === 'mistral') x.max_tokens = MAX_OUT; else x.max_completion_tokens = MAX_OUT;\n  if (m.includes('gpt-oss')) { x.reasoning_effort = 'low'; if (step.name === 'groq') x.include_reasoning = false; }\n  else if (m.includes('qwen')) { x.reasoning_effort = 'low'; if (step.name === 'groq') x.reasoning_format = 'hidden'; }\n  return x;\n};\n\n// One HTTP call that never throws. Returns { status, headers, body, err }.\nconst http = async (opts) => {\n  try {\n    const res = await this.helpers.httpRequest(Object.assign({ json: true, timeout: TIMEOUT, returnFullResponse: true, ignoreHttpStatusErrors: true }, opts));\n    if (res && typeof res === 'object' && ('statusCode' in res || 'status' in res) && 'body' in res) {\n      let body = res.body;\n      if (typeof body === 'string') { try { body = JSON.parse(body); } catch (e) { /* keep text */ } }\n      return { status: Number(res.statusCode || res.status || 0), headers: res.headers || {}, body, err: '' };\n    }\n    return { status: 200, headers: {}, body: res, err: '' };   // helper returned the body directly\n  } catch (e) {\n    const msg = String((e && e.message) || e);\n    const m = msg.match(/status code (\\d{3})/i);\n    const r = (e && e.response) || {};\n    return { status: m ? Number(m[1]) : Number(r.status || e.httpCode || 0), headers: r.headers || {}, body: r.data || r.body || null, err: msg };\n  }\n};\nconst header = (h, name) => { const k = Object.keys(h || {}).find(x => x.toLowerCase() === name); return k ? h[k] : undefined; };\nconst errText = (body) => {\n  if (!body) return '';\n  if (typeof body === 'string') return body.slice(0, 120);\n  const e = body.error || body;\n  return String((e && (e.message || e.code || e.status)) || '').slice(0, 120);\n};\n// Seconds to wait after a 429: the retry-after header, else \"try again in 7.6s\" from the message, else 30.\nconst retryAfter = (r) => {\n  const h = Number(header(r.headers, 'retry-after'));\n  if (Number.isFinite(h) && h > 0) return h;\n  const m = (errText(r.body) + ' ' + r.err).match(/(?:try again|retry) in\\s+(?:(\\d+)m)?\\s*([\\d.]+)\\s*s/i);\n  if (m) return Number(m[1] || 0) * 60 + Number(m[2]);\n  return 30;\n};\n\nconst parseJSON = text => {\n  const t = String(text || '').trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();\n  const s = t.indexOf('{'), e = t.lastIndexOf('}');\n  if (s === -1 || e <= s) return null;\n  try { return JSON.parse(t.slice(s, e + 1)); } catch (err) { return null; }\n};\n\nconst noExtras = {};   // step id -> true once a provider has rejected the extras\nconst callStep = async (step, system, user) => {\n  const KEY = $env[step.key];\n  if (step.kind === 'gemini') {\n    const r = await http({ method: 'POST', url: step.url + step.model + ':generateContent',\n      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': KEY },\n      body: { systemInstruction: { parts: [{ text: system }] }, contents: [{ role: 'user', parts: [{ text: user }] }],\n              generationConfig: { temperature: TEMP, responseMimeType: 'application/json' } } });\n    if (r.status === 200) r.text = (((r.body || {}).candidates || [])[0]?.content?.parts || []).map(x => x.text || '').join('');\n    return r;\n  }\n  const base = { model: step.model, temperature: TEMP, response_format: { type: 'json_object' },\n                 messages: [{ role: 'system', content: system }, { role: 'user', content: user }] };\n  const send = (body) => http({ method: 'POST', url: step.url, headers: { Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' }, body });\n  let r = await send(noExtras[step.id] ? base : Object.assign({}, base, extrasFor(step)));\n  if (r.status === 400 && !noExtras[step.id]) { noExtras[step.id] = true; r = await send(base); r.retried_plain = true; }\n  if (r.status === 200) r.text = ((r.body || {}).choices || [])[0]?.message?.content;\n  return r;\n};\n\n// ---------- facts ----------\nconst displayName = p => {\n  const raw = String(p.company_name || p.domain || '').trim();\n  if (!/\\./.test(raw)) return raw;\n  const stem = String(p.domain || raw).split('.')[0];\n  const m = String(p.clay_summary || '').match(new RegExp('\\\\b' + stem.replace(/[^a-z0-9]/gi, '') + '\\\\b', 'i'));\n  return m ? m[0] : stem.charAt(0).toUpperCase() + stem.slice(1);\n};\nconst firstName = p => String(p.full_name || '').trim().split(/\\s+/)[0] || 'there';\nconst companyTools = p => {\n  const blob = (String(p.tech_stack || '') + ' ' + String(p.clay_summary || '')).toLowerCase().replace(/_/g, ' ');\n  return WATCH.filter(t => has(blob, t));\n};\nconst pickProof = p => {\n  const r = String(p.role_category || '').toLowerCase() + ' ' + String(p.title || '').toLowerCase();\n  if (/rev ?ops|operations|ops|growth|marketing|sales/.test(r)) return PROOFS[2] || PROOFS[0];\n  if (/ceo|founder|cto/.test(r)) return PROOFS[1] || PROOFS[0];\n  return PROOFS[0];\n};\n\n// ---------- what the company SELLS (so a draft never pitches a company its own product) ----------\n// Fixed rules, no LLM: words that the company repeats when it describes itself are its product words\n// (\"commission\" for a commission tool, \"crm\" for a CRM maker). My own vocabulary and filler words are ignored.\nconst TERM_STOP = new Set(('the and for with that this your our you their its from into are was has have can will all any more most one two new now get got use used using make made help helps build built team teams company companies business businesses customer customers client clients user users people ' +\n  'software platform platforms tool tools solution solutions product products service services app apps suite system systems feature features ' +\n  'sales marketing revenue growth b2b saas startup startups small modern best leading first open source free easy simple fast faster powerful smart full time save saves reduce reduces error errors work works way need needs every across within such including also than then them they about over ' +\n  'data lead leads pipeline pipelines workflow workflows process processes manual manually target stated concrete detail observation relevant related site says').split(' '));\nconst TERM_STOP_PREFIX = ['automat', 'integrat', 'enrich', 'scor', 'rout', 'engineer', 'manag', 'sell', 'offer', 'provid', 'includ', 'describ'];\nconst stemWord = w => (w.length > 4 && /ies$/.test(w)) ? w.slice(0, -3) + 'y' : ((w.length > 3 && /s$/.test(w) && !/ss$/.test(w)) ? w.slice(0, -1) : w);\nconst productTerms = (p) => {\n  if (O.product_guard === false) return [];\n  const text = (String(p.clay_summary || '').slice(0, 450) + ' ' + String(p.__site || '').slice(0, 420)).toLowerCase();\n  const own = new Set((String(p.company_name || '') + ' ' + displayName(p) + ' ' + String(p.domain || '').split('.')[0]).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).map(stemWord));\n  const count = {};\n  for (const raw of text.split(/[^a-z0-9]+/)) {\n    const w = stemWord(raw);\n    if (w.length < 3 || /^\\d+$/.test(w) || TERM_STOP.has(w) || TERM_STOP.has(raw) || own.has(w) || WATCH.includes(w)) continue;\n    if (w.length >= 4 && [...own].some(n => n.startsWith(w) || w.startsWith(n) && n.length >= 4)) continue;   // \"palette\" for PaletteHQ\n    if (TERM_STOP_PREFIX.some(x => w.startsWith(x))) continue;\n    count[w] = (count[w] || 0) + 1;\n  }\n  return Object.keys(count).filter(w => count[w] >= 2).sort((a, b) => count[b] - count[a] || a.localeCompare(b)).slice(0, 3);\n};\nconst termRe = t => new RegExp('(^|[^a-z0-9])' + t.replace(/y$/, '(?:y|ie)') + \"(?:s|es|'s)?([^a-z0-9]|$)\", 'i');   // terms are a-z0-9 only\nconst smallTeam = p => { const n = Number(p.employee_count); return Number.isFinite(n) && n > 0 && n <= 20; };\n\n// When there is no Clay summary, read what the company says about itself on its own homepage (title + meta description).\n// One free GET per company, fixed rules, no LLM. Cached per domain for the run.\nconst siteCache = {};\nconst decode = s => String(s || '').replace(/&amp;/g, '&').replace(/&quot;/g, '\"').replace(/&#0?39;|&#x27;|&apos;/g, \"'\").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&#\\d+;|&[a-z]+;/gi, ' ').replace(/\\s+/g, ' ').trim();\nconst siteFacts = async (p) => {\n  const d = String(p.domain || '').toLowerCase().trim();\n  if (!d || SITE.enabled === false) return '';\n  if (siteCache[d] !== undefined) return siteCache[d];\n  let out = '';\n  try {\n    const r = await http({ method: 'GET', url: 'https://' + d + '/', json: false, timeout: Math.max(3000, Number(SITE.timeout_ms || 8000)),\n      headers: { 'User-Agent': 'personal-gtm-engine/3.0 (n8n outreach research)', 'Accept': 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8' } });\n    const html = (r.status >= 200 && r.status < 300 && typeof r.body === 'string') ? r.body.slice(0, 300000) : '';\n    if (html) {\n      const meta = (re) => { const m = html.match(re); return m ? decode(m[1] || m[2]) : ''; };\n      const desc = meta(/<meta[^>]+(?:name|property)=[\"'](?:description|og:description|twitter:description)[\"'][^>]*content=[\"']([^\"']{20,600})[\"']/i)\n                || meta(/<meta[^>]+content=[\"']([^\"']{20,600})[\"'][^>]*(?:name|property)=[\"'](?:description|og:description|twitter:description)[\"']/i);\n      const title = meta(/<title[^>]*>([^<]{3,200})<\\/title>/i);\n      out = [title, desc].filter(Boolean).join(' | ').slice(0, 420);\n      if (/access denied|just a moment|attention required|captcha|403 forbidden|page not found|website expired/i.test(out)) out = '';\n    }\n  } catch (e) { out = ''; }\n  siteCache[d] = out;\n  return out;\n};\n\nconst SYSTEM = [\n  'You write cold outreach drafts for a GTM automation and integration engineer. A human reviews everything; nothing is sent automatically.',\n  'Use ONLY the facts in the USER message. Never invent metrics, clients, results, hiring events, products, documents, data sources or tools.',\n  'GROUNDING: CLAY_SUMMARY and SITE_DESCRIPTION are the only things you know about what the company does. If both are \"none\", do not describe their product, customers, data or internal processes at all: build first_line from INDUSTRY and ALLOWED_COMPANY_TOOLS only.',\n  'ALLOWED_COMPANY_TOOLS were detected on the company public website. You may say you noticed a tool on their site. You do not know how they use it. A product that integrates with a tool is not the same as the company using that tool internally.',\n  'You may name a tool of the COMPANY only if it appears in ALLOWED_COMPANY_TOOLS. Otherwise do not name any company tool.',\n  'THEIR PRODUCT IS NOT THEIR PROBLEM: CLAY_SUMMARY and SITE_DESCRIPTION describe what the company SELLS to its own customers. Never offer to build, automate, extend, feed or integrate with that product, and never describe the problem their product solves as a problem they have. The words in PRODUCT_TERMS name their product: they may appear in first_line and trigger only, and in no other field.',\n  'WHAT YOU OFFER: help with the company OWN go-to-market operations, meaning how they find, enrich, score, route and follow up their own leads, signups and customers, or report on their own pipeline. Choose ONE such idea. You may use what they sell only to infer who their buyers are.',\n  'Follow TEAM_NOTE.',\n  'HEDGING: you have never seen inside this company. Any statement about their team, workload or problems must be a question or a hedged guess (use \"likely\", \"often\", \"if\", \"curious whether\"). Never write that their team \"must\", \"has to\", \"spends\", \"struggles\" or \"is forced\" as a fact, and never write \"forces your\", \"which means\", \"considerable time\" or \"significant time\".',\n  'Never invent an example that names specific documents, tickets, contracts or systems of theirs. Workflow ideas must use only ALLOWED_COMPANY_TOOLS and generic nouns (leads, contacts, CRM, pipeline), minus anything in PRODUCT_TERMS.',\n  'Do not propose a partnership or a \"joint\" anything. The sender is offering a small freelance automation build.',\n  'PROOF_POINT is the SENDER own work: write it in first person (I/we), never as the recipient own (\"your n8n engine\"). If PROOF_POINT starts with \"Can build\", say \"I can build\", never \"I built\". Do not quantify results (no \"in half\", \"2x\", percentages).',\n  'Do NOT write a greeting, a sign-off, a call to action, a placeholder like [Name], links, or em dashes. Code adds those.',\n  'first_line: 15-35 words and it MUST contain COMPANY_NAME_TO_USE exactly. ONE specific observation from the facts + ONE hedged guess or question about how they handle THEIR OWN incoming leads, signups, demo requests or customer handoffs. No flattery.',\n  'body_rest: 45-65 words. One capability proof (paraphrase PROOF_POINT) + one concrete workflow idea for THEIR OWN lead or customer operations.',\n  'follow_up_1 and follow_up_2: 12-30 words each; follow_up_2 adds one concrete workflow idea. follow_up_3: under 12 words, the shortest of the three, a polite breakup. Each follow-up starts with the first name. first_line must NOT start with the first name.',\n  'linkedin_note: between 20 and 40 words (count them), ends with a short question.',\n  'Return ONLY a JSON object with exactly these string keys: angle, trigger, pain_point, value_proposition, email_subject, first_line, body_rest, follow_up_1, follow_up_2, follow_up_3, linkedin_note.'\n].join(' ');\n\nconst userPrompt = p => [\n  'COMPANY: ' + p.company_name + ' (' + p.domain + ')',\n  'COMPANY_NAME_TO_USE: ' + displayName(p),\n  'INDUSTRY: ' + p.industry + ' | EMPLOYEES: ' + p.employee_count + ' | FUNDING: ' + p.funding_stage,\n  'CLAY_SUMMARY: ' + String(p.clay_summary || 'none').slice(0, 450),\n  'SITE_DESCRIPTION: ' + String(p.__site || 'none').slice(0, 420),\n  'ALLOWED_COMPANY_TOOLS: ' + (companyTools(p).join(', ') || 'none'),\n  'PRODUCT_TERMS: ' + ((p.__terms || []).join(', ') || 'none'),\n  'TEAM_NOTE: ' + (smallTeam(p) ? 'small company of about ' + p.employee_count + ' people. There is no separate ops team. Say \"you\" or \"your team\", never \"ops team\" or \"operations team\".' : 'none'),\n  'CONTACT: ' + p.full_name + ', ' + p.title,\n  'FIRST_NAME: ' + firstName(p),\n  'PROOF_POINT: ' + pickProof(p),\n  'TONE: ' + (O.tone || 'direct, concise, evidence-first')\n].join('\\n');\n\n// ---------- assemble + validate (deterministic, no LLM) ----------\nconst KEYS_REQ = ['angle','trigger','pain_point','value_proposition','email_subject','first_line','body_rest','follow_up_1','follow_up_2','follow_up_3','linkedin_note'];\nconst assemble = (p, d) => {\n  const o = {};\n  for (const k of KEYS_REQ) o[k] = norm(d[k]);\n  o.first_line = o.first_line.replace(new RegExp('^' + firstName(p).replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&') + '\\\\s*[,:-]\\\\s*', 'i'), '').replace(/^./, c => c.toUpperCase());\n  o.proof_point = pickProof(p);\n  o.cta = CTA;\n  o.message_draft = 'Hi ' + firstName(p) + ',\\n\\n' + o.first_line + ' ' + o.body_rest + '\\n\\n' + CTA + '\\n\\n' + SENDER;\n  return o;\n};\nconst HEDGE = /\\b(likely|may|might|could|can|if|perhaps|probably|often|curious|wonder|guess|assume|typically|usually|tends?|sometimes|whether)\\b|\\?/i;\nconst ASSERT = /\\b(?:your|the|their)\\s+(?:[a-z-]+\\s+){0,2}(?:team|group|crew|engineers|reps|staff)\\s+(?:must|has to|have to|is forced|are forced|spends?|wastes?|struggles?|juggles?|is juggling|are juggling)\\b|\\bforc(?:es|ing) (?:your|the|their)\\b/i;\nconst validate = (p, o) => {\n  const bad = [];\n  for (const k of KEYS_REQ) if (!o[k]) bad.push('missing:' + k);\n  if (bad.length) return bad;\n  const all = KEYS_REQ.map(k => o[k]).join(' \\n ');\n  const lower0 = all.toLowerCase();\n  if (/[\\[\\]{}]|https?:\\/\\/|www\\./i.test(all)) bad.push('placeholder_or_link');\n  if (/[$%\\u20AC]/.test(all)) bad.push('money_or_percent');\n  if (/\\bi hope\\b|\\bbest,|\\bregards\\b/i.test(all)) bad.push('boilerplate');\n  const total = wc(o.message_draft);\n  if (total < W.total[0] || total > W.total[1]) bad.push('words:' + total);\n  const nw = wc(o.linkedin_note);\n  if (nw < W.note[0] || nw > W.note[1] || o.linkedin_note.length > 300) bad.push('li_words:' + nw);\n  const f1 = wc(o.follow_up_1), f2 = wc(o.follow_up_2), f3 = wc(o.follow_up_3);\n  if (f1 > 40 || f2 > 40 || f3 > f1 || f3 > f2) bad.push('followups_length:' + f1 + '/' + f2 + '/' + f3);\n  const stem = String(p.domain || '').split('.')[0].toLowerCase();\n  const fl = o.first_line.toLowerCase();\n  if (!(fl.includes(String(p.company_name || '').toLowerCase()) || fl.includes(displayName(p).toLowerCase()) || (stem && fl.includes(stem)))) bad.push('first_line_no_company');\n  if (wc(o.email_subject) < 3 || o.email_subject.length > 80) bad.push('subject');\n  if (/\\b(your|their) (n8n|engine)\\b/i.test(all)) bad.push('wrong_perspective');\n  if (/\\b(i|we)('ve| have)? built\\b/i.test(all) && !PROOFS.filter(x => /^built /i.test(x)).map(x => x.toLowerCase().split(/\\s+/).slice(1, 4).join(' ')).some(k => lower0.includes(k))) bad.push('overclaims_built');\n  if (/\\b(in half|twice|double|doubling|triple|halve|halving|\\dx)\\b/i.test(all)) bad.push('quantified_claim');\n  if (/\\bjoint (workflow|project|solution|venture|effort)\\b|\\bpartner(ship)? with (you|your)\\b/i.test(all)) bad.push('partnership_pitch');\n  // an unhedged statement about their team's problems is a guess presented as a fact\n  // \"so your team spends less time on X\" describes the benefit, not their problem, so it is not counted\n  const asserted = all.split(/(?<=[.!?])\\s+|\\n/).map(s => s.replace(/\\bso (?:that )?(?:your|the|their)\\b/gi, 'so')).filter(s => ASSERT.test(s) && !HEDGE.test(s));\n  if (asserted.length) bad.push('asserted_pain');\n  // a guess dressed up as a conclusion (\"which likely means you spend considerable time ...\")\n  if (/\\b(?:considerable|significant|substantial|countless|a lot of|too much|hours of)\\s+(?:time|effort|hours|manual)\\b|\\b(?:which|that|this)\\s+(?:(?:likely|probably|surely|clearly)\\s+)?means\\b|\\bno doubt\\b|\\bi know (?:you|your)\\b/i.test(all)) bad.push('presumptuous');\n  if (smallTeam(p) && /\\b(?:ops|operations|revops|rev ops|sales ops|marketing ops)\\s+(?:team|department|staff)(?:'s)?\\b/i.test(all)) bad.push('ops_team_at_small_company');\n  // their product is not their problem: product words are allowed in first_line and trigger only\n  const offer = ['angle','pain_point','value_proposition','email_subject','body_rest','follow_up_1','follow_up_2','follow_up_3','linkedin_note'].map(k => o[k]).join(' \\n ');\n  const own = (p.__terms || []).filter(t => termRe(t).test(offer));\n  if (own.length) bad.push('own_product:' + own.join('+'));\n  // tool whitelist: a watched tool may appear only if the company uses it or my chosen proof mentions it\n  const okTools = new Set(companyTools(p).concat(WATCH.filter(t => has(o.proof_point.toLowerCase(), t))));\n  const lower = all.toLowerCase();\n  const rogue = WATCH.filter(t => has(lower, t) && !okTools.has(t));\n  if (rogue.length) bad.push('rogue_tools:' + rogue.join('+'));\n  // numbers must come from the facts. Words like n8n, b2b, web3 are names, not numbers.\n  const facts = (String(p.clay_summary || '') + ' ' + String(p.__site || '') + ' ' + p.employee_count + ' ' + o.proof_point + ' ' + CTA + ' ' + p.tech_stack).toLowerCase();\n  const nums = (lower.replace(/\\b[a-z]+\\d[a-z0-9]*\\b/g, ' ').match(/\\d+/g) || []).filter(n => !facts.includes(n));\n  if (nums.length) bad.push('invented_numbers:' + nums.join(','));\n  return bad;\n};\n\nconst proofSentence = t => (/^can /i.test(t) ? 'I ' + t.replace(/^./, c => c.toLowerCase()) : /^built /i.test(t) ? 'I ' + t.replace(/^./, c => c.toLowerCase()) : t) + '.';\nconst templateDraft = p => {\n  const cap = t => t.replace(/\\b\\w/g, c => c.toUpperCase());\n  const tools = companyTools(p).slice(0, 2).map(cap).join(' and ');\n  const nm = displayName(p);\n  const fn = firstName(p);\n  const clayObs = (String(p.clay_summary || '').split(/\\.\\s/)[0] || '').replace(/\\.$/, '').slice(0, 150);\n  // No Clay summary: say only what was actually seen (a tool on their site), never a generic claim about the company.\n  const obs = clayObs || (tools ? 'I noticed ' + tools + ' on the ' + nm + ' site' : nm + ' came up while I was looking at B2B teams that run their own lead operations');\n  return {\n    angle: 'automation-audit', trigger: obs,\n    pain_point: 'Manual handoffs between lead data, CRM and reporting often grow with volume.',\n    value_proposition: 'Deterministic n8n and Clay pipelines that enrich, score and route leads without extra headcount.',\n    email_subject: nm + ': one lead-ops workflow idea',\n    first_line: obs + '. For a team like ' + nm + ', lead enrichment and routing often stay manual' + (tools && clayObs ? ' between tools such as ' + tools : '') + '.',\n    body_rest: 'I build deterministic automation layers that enrich, score and route leads without adding headcount, so your team can spend time on conversations instead of data entry. Relevant proof: ' + proofSentence(pickProof(p)),\n    follow_up_1: fn + ', adding one concrete idea: a scheduled n8n job that enriches new leads and writes scored rows to your CRM. Worth a short example?',\n    follow_up_2: fn + ', I can send a one-page diagram of the lead routing flow. No call needed.',\n    follow_up_3: fn + ', closing the loop. My door stays open if automation capacity comes up later.',\n    linkedin_note: 'Hi ' + fn + ', I build n8n and Clay pipelines that enrich and route leads for B2B teams like ' + nm + '. Open to a short workflow example?'\n  };\n};\n// The fallback text says \"CRM\". For a company that sells a CRM, that word is their product, so it is swapped out.\nconst templateFor = p => {\n  const t = templateDraft(p);\n  if (!(p.__terms || []).includes('crm')) return t;\n  for (const k of Object.keys(t)) t[k] = t[k].replace(/lead data, CRM and reporting/g, 'lead data and reporting').replace(/\\byour CRM\\b/g, 'your pipeline').replace(/\\bCRM\\b/g, 'pipeline');\n  return t;\n};\n\n// Plain-language repair hints for the rules a model most often misreads.\nconst hints = (bad) => {\n  const h = [];\n  const own = bad.find(b => b.startsWith('own_product:'));\n  if (own) h.push(' The words \"' + own.slice(12).split('+').join('\", \"') + '\" name what this company SELLS. Remove them from every field except first_line and trigger, and offer help with the company OWN lead handling instead (new signups, demo requests, enrichment, scoring, routing, follow-up, pipeline reporting).');\n  if (bad.includes('presumptuous')) h.push(' Do not conclude anything about their workload. Ask a short question instead.');\n  if (bad.includes('ops_team_at_small_company')) h.push(' This is a small company: write \"you\" or \"your team\", never \"ops team\".');\n  return h.join('');\n};\n\n// ---------- run ----------\nconst cooldown = {};   // step id -> timestamp until which the step is skipped\nconst hardFails = {};  // step id -> consecutive hard failures\nconst out = [];\nlet first = true;\nlet leftForNextRun = 0;\n\nfor (let pi = 0; pi < pairs.length; pi++) {\n  const p = pairs[pi];\n  // Stop early rather than hit the Code node time limit. Undrafted contacts stay \"new\" and are picked up next run.\n  if (Date.now() - T0 > RUN_BUDGET_MS) { leftForNextRun = pairs.length - pi; break; }\n  if (!first) await sleep(PACE_MS);\n  first = false;\n\n  p.__site = String(p.clay_summary || '').trim() ? '' : await siteFacts(p);\n  const factsLevel = String(p.clay_summary || '').trim() ? 'clay' : (p.__site ? 'site' : 'none');\n  p.__terms = productTerms(p);\n\n  let row = null, provider = 'template', calls = 0, fails = 0;\n  const errs = [];\n\n  for (const step of CHAIN) {\n    if (step.error) { errs.push(step.id + ':' + step.error); continue; }\n    if (!$env[step.key]) { errs.push(step.id + ':key_missing'); fails++; continue; }\n    if (cooldown[step.id] && Date.now() < cooldown[step.id]) { errs.push(step.id + ':cooling_down'); continue; }\n\n    let repair = '', waits = 0, transient = 0;\n    for (let attempt = 0; attempt < 4 && !row; attempt++) {\n      calls++;\n      const r = await callStep(step, SYSTEM, userPrompt(p) + repair);\n      if (r.retried_plain) errs.push(step.id + ':extras_rejected_retried_plain');\n\n      if (r.status === 200) {\n        hardFails[step.id] = 0;\n        const d = parseJSON(r.text);\n        const bad = d ? validate(p, assemble(p, d)) : ['unparseable_json'];\n        if (!bad.length) { row = assemble(p, d); provider = step.id; break; }\n        fails++; errs.push(step.id + ':invalid:' + bad.join('|').slice(0, 80));\n        if (repair) break;                       // one repair attempt per provider\n        repair = '\\n\\nYOUR PREVIOUS ANSWER WAS REJECTED FOR: ' + bad.join('|') + '.' + hints(bad) + ' Return the full JSON again with these problems fixed.';\n        continue;\n      }\n\n      fails++;\n      if (r.status === 429) {\n        const wait = retryAfter(r);\n        const waitMs = Math.ceil(wait * 1000) + 500;\n        if (wait <= MAX_WAIT_S && waits < 2 && waitMs <= WAIT_BUDGET_MS) {\n          errs.push(step.id + ':429_waited_' + Math.ceil(wait) + 's');\n          WAIT_BUDGET_MS -= waitMs; waits++;\n          await sleep(waitMs);\n          continue;\n        }\n        // Too long to wait here. Rest this model and let the next provider take over; it comes back after the cooldown.\n        cooldown[step.id] = Date.now() + Math.min(wait, 300) * 1000;\n        errs.push(step.id + ':429_cooldown_' + Math.ceil(Math.min(wait, 300)) + 's');\n        break;\n      }\n      if ([400, 401, 403, 404].includes(r.status)) {\n        // Wrong key, wrong model name or blocked account: no point retrying in this run.\n        cooldown[step.id] = Date.now() + 3600000;\n        errs.push(step.id + ':http_' + r.status + ':' + (errText(r.body) || r.err).slice(0, 70));\n        break;\n      }\n      // 5xx, timeout or network error\n      errs.push(step.id + ':' + (r.status ? 'http_' + r.status : 'network') + ':' + (errText(r.body) || r.err).slice(0, 50));\n      if (r.status >= 500 && transient < 1) { transient++; await sleep(3000); continue; }\n      hardFails[step.id] = (hardFails[step.id] || 0) + 1;\n      if (hardFails[step.id] >= 2) cooldown[step.id] = Date.now() + 120000;\n      break;\n    }\n    if (row) break;\n  }\n\n  if (!row) {\n    row = assemble(p, templateFor(p));\n    const bad = validate(p, row);\n    if (bad.length) errs.push('template_warn:' + bad.join('|'));\n  }\n\n  const flags = [];\n  if (p.flags) flags.push(p.flags);\n  flags.push('provider=' + provider);\n  if (provider === 'template') flags.push('template_review_hard');\n  flags.push('facts=' + factsLevel);\n  if (factsLevel === 'none') flags.push('no_company_facts');\n  flags.push('facts_tools=' + (companyTools(p).join('+') || 'none'));\n  if (p.__terms.length) flags.push('their_product=' + p.__terms.join('+'));\n\n  out.push({ json: Object.assign({\n    run_date: new Date().toISOString(),\n    outreach_id: 'or_' + String(p.contact_id || '').replace(/\\s+/g, '_') + '_' + Date.now().toString(36),\n    account_id: p.account_id, contact_id: p.contact_id, company_name: p.company_name, contact_name: p.full_name,\n    channel: p.channel }, (() => { const r = Object.assign({}, row); delete r.body_rest; return r; })(), {\n    risk_notes: (flags.join('; ') + (errs.length ? ' | llm_errors: ' + errs.join(' ; ') : '')).slice(0, 450),\n    approval_status: 'pending', send_status: 'not_sent', sent_at: '', reply_received: '',\n    notes: p.__site ? ('Site says: ' + p.__site).slice(0, 450) : '',\n    llm_provider: provider, llm_calls: calls, llm_failures: fails }) });\n}\n\nif (leftForNextRun && out.length) {\n  const last = out[out.length - 1].json;\n  last.risk_notes = ('run_budget_hit: ' + leftForNextRun + ' contact(s) left for the next run; ' + last.risk_notes).slice(0, 450);\n}\nreturn out;"
+        "jsCode": "const cfg = $('Load Config').first().json.config || {};\nconst O = cfg.outreach || {};\nconst L = O.llm || {};\nconst pairs = $input.all().map(i => i.json).filter(r => r && r.outreach_pair === true);\nif (!pairs.length) return [];\n\n// ---------- settings (all overridable from config.outreach.llm) ----------\nconst T0 = Date.now();\nconst TIMEOUT = Math.max(5000, Number(L.timeout_ms || 40000));\nconst TEMP = Number(L.temperature ?? 0.3);\nconst PACE_MS = Math.max(0, Number(L.politeness_ms ?? 6000));          // pause between drafts\nconst MAX_OUT = Math.max(600, Number(L.max_output_tokens || 1500));    // includes reasoning tokens\nconst MAX_WAIT_S = Math.max(0, Number(L.max_wait_s ?? 20));            // longest single wait on a 429\nlet WAIT_BUDGET_MS = Math.max(0, Number(L.wait_budget_ms ?? 90000));   // total 429 waiting per run\nconst RUN_BUDGET_MS = Math.max(60000, Number(L.run_budget_ms || 240000)); // stay under the Code node time limit\nconst SITE = Object.assign({ enabled: true, timeout_ms: 8000 }, O.site_facts || {});\n\nconst SENDER = String(O.sender_name || 'Mohamed');\nconst CTA = String(O.cta || 'Open to a 2-minute workflow example relevant to your stack?');\nconst PROOFS = (O.proof_points && O.proof_points.length) ? O.proof_points : ['Built a federated B2B GTM SaaS platform with FastAPI, Supabase and LLM routing'];\nconst WATCH = (O.tool_watchlist || ['hubspot','salesforce','pipedrive','shopify','stripe','intercom','calendly','google analytics','zapier','slack','mixpanel','snowflake','zendesk','marketo','salesloft','airtable']).map(s => String(s).toLowerCase());\nconst W = { total: [Number((O.words || {}).min || 70), Number((O.words || {}).max || 120)], note: [20, 40] };\n\nconst sleep = ms => new Promise(r => setTimeout(r, ms));\nconst wc = s => String(s || '').trim().split(/\\s+/).filter(Boolean).length;\nconst norm = s => String(s == null ? '' : s).replace(/[‐‑‒–]/g, '-').replace(/\\s*—\\s*/g, ' - ').replace(/[‘’]/g, \"'\").replace(/[“”]/g, '\"').replace(/\\s+\\n/g, '\\n').replace(/[ ]{2,}/g, ' ').trim();\nconst has = (hay, needle) => new RegExp('(^|[^a-z0-9])' + needle.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&') + '([^a-z0-9]|$)', 'i').test(hay);\n\n// ---------- provider registry ----------\n// Every provider except Gemini speaks the OpenAI chat format, so adding one is a line of config, not new code.\nconst PRESETS = {\n  groq:       { kind: 'openai', url: 'https://api.groq.com/openai/v1/chat/completions', key: 'GROQ_API_KEY',       model: L.groq_model || 'openai/gpt-oss-120b' },\n  mistral:    { kind: 'openai', url: 'https://api.mistral.ai/v1/chat/completions',      key: 'MISTRAL_API_KEY',    model: L.mistral_model || 'mistral-small-latest' },\n  cerebras:   { kind: 'openai', url: 'https://api.cerebras.ai/v1/chat/completions',     key: 'CEREBRAS_API_KEY',   model: L.cerebras_model || 'gpt-oss-120b' },\n  openrouter: { kind: 'openai', url: 'https://openrouter.ai/api/v1/chat/completions',   key: 'OPENROUTER_API_KEY', model: L.openrouter_model || '' },\n  gemini:     { kind: 'gemini', url: 'https://generativelanguage.googleapis.com/v1beta/models/', key: 'GEMINI_API_KEY', model: L.gemini_model || 'gemini-3.8-flash' }\n};\n// Optional extra providers from config: outreach.llm.providers = { \"name\": { \"url\": \"...\", \"key_env\": \"NAME_API_KEY\", \"model\": \"...\" } }\nfor (const [name, p] of Object.entries(L.providers || {})) {\n  if (p && p.url && p.key_env) PRESETS[String(name).toLowerCase()] = { kind: p.kind === 'gemini' ? 'gemini' : 'openai', url: String(p.url), key: String(p.key_env), model: String(p.model || '') };\n}\n\n// A chain entry is \"provider\" or \"provider:model\". The second form lets one key use two models,\n// and each model has its own rate limit bucket.\nconst parseStep = (entry) => {\n  const s = String(entry || '').trim();\n  const i = s.indexOf(':');\n  const name = (i === -1 ? s : s.slice(0, i)).toLowerCase();\n  const preset = PRESETS[name];\n  if (!preset) return { id: s, error: 'unknown' };\n  const model = i === -1 ? preset.model : s.slice(i + 1).trim();\n  if (!model) return { id: s, error: 'no_model' };\n  return { id: i === -1 ? name : name + ':' + model, name, model, kind: preset.kind, url: preset.url, key: preset.key };\n};\nconst CHAIN = (Array.isArray(L.chain) && L.chain.length ? L.chain : ['groq', 'gemini', 'template'])\n  .filter(s => String(s).toLowerCase() !== 'template').map(parseStep);\n\n// Per-model extras that cut token use. If a provider rejects them (HTTP 400), the call is retried once without them.\nconst extrasFor = (step) => {\n  const m = step.model.toLowerCase();\n  const x = {};\n  if (step.name === 'mistral') x.max_tokens = MAX_OUT; else x.max_completion_tokens = MAX_OUT;\n  if (m.includes('gpt-oss')) { x.reasoning_effort = 'low'; if (step.name === 'groq') x.include_reasoning = false; }\n  else if (m.includes('qwen')) { x.reasoning_effort = 'low'; if (step.name === 'groq') x.reasoning_format = 'hidden'; }\n  return x;\n};\n\n// One HTTP call that never throws. Returns { status, headers, body, err }.\nconst http = async (opts) => {\n  try {\n    const res = await this.helpers.httpRequest(Object.assign({ json: true, timeout: TIMEOUT, returnFullResponse: true, ignoreHttpStatusErrors: true }, opts));\n    if (res && typeof res === 'object' && ('statusCode' in res || 'status' in res) && 'body' in res) {\n      let body = res.body;\n      if (typeof body === 'string') { try { body = JSON.parse(body); } catch (e) { /* keep text */ } }\n      return { status: Number(res.statusCode || res.status || 0), headers: res.headers || {}, body, err: '' };\n    }\n    return { status: 200, headers: {}, body: res, err: '' };   // helper returned the body directly\n  } catch (e) {\n    const msg = String((e && e.message) || e);\n    const m = msg.match(/status code (\\d{3})/i);\n    const r = (e && e.response) || {};\n    return { status: m ? Number(m[1]) : Number(r.status || e.httpCode || 0), headers: r.headers || {}, body: r.data || r.body || null, err: msg };\n  }\n};\nconst header = (h, name) => { const k = Object.keys(h || {}).find(x => x.toLowerCase() === name); return k ? h[k] : undefined; };\nconst errText = (body) => {\n  if (!body) return '';\n  if (typeof body === 'string') return body.slice(0, 120);\n  const e = body.error || body;\n  return String((e && (e.message || e.code || e.status)) || '').slice(0, 120);\n};\n// Seconds to wait after a 429: the retry-after header, else \"try again in 7.6s\" from the message, else 30.\nconst retryAfter = (r) => {\n  const h = Number(header(r.headers, 'retry-after'));\n  if (Number.isFinite(h) && h > 0) return h;\n  const m = (errText(r.body) + ' ' + r.err).match(/(?:try again|retry) in\\s+(?:(\\d+)m)?\\s*([\\d.]+)\\s*s/i);\n  if (m) return Number(m[1] || 0) * 60 + Number(m[2]);\n  return 30;\n};\n\nconst parseJSON = text => {\n  const t = String(text || '').trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();\n  const s = t.indexOf('{'), e = t.lastIndexOf('}');\n  if (s === -1 || e <= s) return null;\n  try { return JSON.parse(t.slice(s, e + 1)); } catch (err) { return null; }\n};\n\nconst noExtras = {};   // step id -> true once a provider has rejected the extras\nconst callStep = async (step, system, user) => {\n  const KEY = $env[step.key];\n  if (step.kind === 'gemini') {\n    const r = await http({ method: 'POST', url: step.url + step.model + ':generateContent',\n      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': KEY },\n      body: { systemInstruction: { parts: [{ text: system }] }, contents: [{ role: 'user', parts: [{ text: user }] }],\n              generationConfig: { temperature: TEMP, responseMimeType: 'application/json' } } });\n    if (r.status === 200) r.text = (((r.body || {}).candidates || [])[0]?.content?.parts || []).map(x => x.text || '').join('');\n    return r;\n  }\n  const base = { model: step.model, temperature: TEMP, response_format: { type: 'json_object' },\n                 messages: [{ role: 'system', content: system }, { role: 'user', content: user }] };\n  const send = (body) => http({ method: 'POST', url: step.url, headers: { Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' }, body });\n  let r = await send(noExtras[step.id] ? base : Object.assign({}, base, extrasFor(step)));\n  if (r.status === 400 && !noExtras[step.id]) { noExtras[step.id] = true; r = await send(base); r.retried_plain = true; }\n  if (r.status === 200) r.text = ((r.body || {}).choices || [])[0]?.message?.content;\n  return r;\n};\n\n// ---------- facts ----------\nconst displayName = p => {\n  const raw = String(p.company_name || p.domain || '').trim();\n  if (!/\\./.test(raw)) return raw;\n  const stem = String(p.domain || raw).split('.')[0];\n  const m = String(p.clay_summary || '').match(new RegExp('\\\\b' + stem.replace(/[^a-z0-9]/gi, '') + '\\\\b', 'i'));\n  return m ? m[0] : stem.charAt(0).toUpperCase() + stem.slice(1);\n};\nconst firstName = p => String(p.full_name || '').trim().split(/\\s+/)[0] || 'there';\nconst companyTools = p => {\n  const blob = (String(p.tech_stack || '') + ' ' + String(p.clay_summary || '')).toLowerCase().replace(/_/g, ' ');\n  return WATCH.filter(t => has(blob, t) && t !== 'google analytics');   // analytics is not a source of lead data\n};\nconst pickProof = p => {\n  const r = String(p.role_category || '').toLowerCase() + ' ' + String(p.title || '').toLowerCase();\n  if (/rev ?ops|operations|ops|growth|marketing|sales/.test(r)) return PROOFS[2] || PROOFS[0];\n  if (/ceo|founder|cto/.test(r)) return PROOFS[1] || PROOFS[0];\n  return PROOFS[0];\n};\n\n// ---------- what the company SELLS (so a draft never pitches a company its own product) ----------\n// Fixed rules, no LLM: words that the company repeats when it describes itself are its product words\n// (\"commission\" for a commission tool, \"crm\" for a CRM maker). My own vocabulary and filler words are ignored.\nconst TERM_STOP = new Set(('the and for with that this your our you their its from into are was has have can will all any more most one two new now get got use used using make made help helps build built team teams company companies business businesses customer customers client clients user users people ' +\n  'software platform platforms tool tools solution solutions product products service services app apps suite system systems feature features ' +\n  'sales marketing revenue growth b2b saas startup startups small modern best leading first open source free easy simple fast faster powerful smart full time save saves reduce reduces error errors work works way need needs every across within such including also than then them they about over ' +\n  'data lead leads pipeline pipelines workflow workflows process processes manual manually target stated concrete detail observation relevant related site says').split(' '));\nconst TERM_STOP_PREFIX = ['automat', 'integrat', 'enrich', 'scor', 'rout', 'engineer', 'manag', 'sell', 'offer', 'provid', 'includ', 'describ'];\nconst stemWord = w => (w.length > 4 && /ies$/.test(w)) ? w.slice(0, -3) + 'y' : ((w.length > 3 && /s$/.test(w) && !/ss$/.test(w)) ? w.slice(0, -1) : w);\nconst productTerms = (p) => {\n  if (O.product_guard === false) return [];\n  const text = (String(p.clay_summary || '').slice(0, 450) + ' ' + String(p.__site || '').slice(0, 420)).toLowerCase();\n  const own = new Set((String(p.company_name || '') + ' ' + displayName(p) + ' ' + String(p.domain || '').split('.')[0]).toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).map(stemWord));\n  const count = {};\n  for (const raw of text.split(/[^a-z0-9]+/)) {\n    const w = stemWord(raw);\n    if (w.length < 3 || /^\\d+$/.test(w) || TERM_STOP.has(w) || TERM_STOP.has(raw) || own.has(w) || WATCH.includes(w)) continue;\n    if (w.length >= 4 && [...own].some(n => n.startsWith(w) || w.startsWith(n) && n.length >= 4)) continue;   // \"palette\" for PaletteHQ\n    if (TERM_STOP_PREFIX.some(x => w.startsWith(x))) continue;\n    count[w] = (count[w] || 0) + 1;\n  }\n  return Object.keys(count).filter(w => count[w] >= 2).sort((a, b) => count[b] - count[a] || a.localeCompare(b)).slice(0, 3);\n};\nconst termRe = t => new RegExp('(^|[^a-z0-9])' + t.replace(/y$/, '(?:y|ie)') + \"(?:s|es|'s)?([^a-z0-9]|$)\", 'i');   // terms are a-z0-9 only\nconst smallTeam = p => { const n = Number(p.employee_count); return Number.isFinite(n) && n > 0 && n <= 20; };\n\n// When there is no Clay summary, read what the company says about itself on its own homepage (title + meta description).\n// One free GET per company, fixed rules, no LLM. Cached per domain for the run.\nconst siteCache = {};\nconst decode = s => String(s || '').replace(/&amp;/g, '&').replace(/&quot;/g, '\"').replace(/&#0?39;|&#x27;|&apos;/g, \"'\").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ').replace(/&#\\d+;|&[a-z]+;/gi, ' ').replace(/\\s+/g, ' ').trim();\nconst siteFacts = async (p) => {\n  const d = String(p.domain || '').toLowerCase().trim();\n  if (!d || SITE.enabled === false) return '';\n  if (siteCache[d] !== undefined) return siteCache[d];\n  let out = '';\n  try {\n    const r = await http({ method: 'GET', url: 'https://' + d + '/', json: false, timeout: Math.max(3000, Number(SITE.timeout_ms || 8000)),\n      headers: { 'User-Agent': 'personal-gtm-engine/3.0 (n8n outreach research)', 'Accept': 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8' } });\n    const html = (r.status >= 200 && r.status < 300 && typeof r.body === 'string') ? r.body.slice(0, 300000) : '';\n    if (html) {\n      const meta = (re) => { const m = html.match(re); return m ? decode(m[1] || m[2]) : ''; };\n      const desc = meta(/<meta[^>]+(?:name|property)=[\"'](?:description|og:description|twitter:description)[\"'][^>]*content=[\"']([^\"']{20,600})[\"']/i)\n                || meta(/<meta[^>]+content=[\"']([^\"']{20,600})[\"'][^>]*(?:name|property)=[\"'](?:description|og:description|twitter:description)[\"']/i);\n      const title = meta(/<title[^>]*>([^<]{3,200})<\\/title>/i);\n      out = [title, desc].filter(Boolean).join(' | ').slice(0, 420);\n      if (/access denied|just a moment|attention required|captcha|403 forbidden|page not found|website expired/i.test(out)) out = '';\n    }\n  } catch (e) { out = ''; }\n  siteCache[d] = out;\n  return out;\n};\n\nconst SYSTEM = [\n  'You write cold outreach drafts for a GTM automation and integration engineer. A human reviews everything; nothing is sent automatically.',\n  'Use ONLY the facts in the USER message. Never invent metrics, clients, results, hiring events, products, documents, data sources or tools.',\n  'GROUNDING: CLAY_SUMMARY and SITE_DESCRIPTION are the only things you know about what the company does. If both are \"none\", do not describe their product, customers, data or internal processes at all: build first_line from INDUSTRY and ALLOWED_COMPANY_TOOLS only.',\n  'ALLOWED_COMPANY_TOOLS were detected on the company public website. You may say you noticed a tool on their site. You do not know how they use it. A product that integrates with a tool is not the same as the company using that tool internally.',\n  'You may name a tool of the COMPANY only if it appears in ALLOWED_COMPANY_TOOLS. Otherwise do not name any company tool.',\n  'THEIR PRODUCT IS NOT THEIR PROBLEM: CLAY_SUMMARY and SITE_DESCRIPTION describe what the company SELLS to its own customers. Never offer to build, automate, extend, feed or integrate with that product, and never describe the problem their product solves as a problem they have. The words in PRODUCT_TERMS name their product: they may appear in first_line and trigger only, and in no other field.',\n  'WHAT YOU OFFER: help with the company OWN go-to-market operations, meaning how they find, enrich, score, route and follow up their own leads, signups and customers, or report on their own pipeline. Choose ONE such idea. You may use what they sell only to infer who their buyers are.',\n  'Follow TEAM_NOTE.',\n  'HEDGING: you have never seen inside this company. Any statement about their team, workload or problems must be a question or a hedged guess (use \"likely\", \"often\", \"if\", \"curious whether\"). Never write that their team \"must\", \"has to\", \"spends\", \"struggles\" or \"is forced\" as a fact, and never write \"forces your\", \"which means\", \"considerable time\" or \"significant time\".',\n  'Never invent an example that names specific documents, tickets, contracts or systems of theirs. Workflow ideas must use only ALLOWED_COMPANY_TOOLS and generic nouns (leads, contacts, CRM, pipeline), minus anything in PRODUCT_TERMS.',\n  'Do not propose a partnership or a \"joint\" anything. The sender is offering a small freelance automation build.',\n  'PROOF_POINT is the SENDER own work: write it in first person (I/we), never as the recipient own (\"your n8n engine\"). If PROOF_POINT starts with \"Can build\", say \"I can build\", never \"I built\". Do not quantify results (no \"in half\", \"2x\", percentages).',\n  'Do NOT write a greeting, a sign-off, a call to action, a placeholder like [Name], links, or em dashes. Code adds those.',\n  'If TRIGGER_FACT is not none, use it as the trigger and build first_line on it. Copy any date, amount or job title from it exactly. Never add details it does not contain.',\n  'If TRIGGER_FACT is none, set trigger to the one specific observation you use in first_line (a service they offer or a tool they use). Never leave trigger empty.',\n  'first_line: 15-35 words and it MUST contain COMPANY_NAME_TO_USE exactly. ONE specific observation from the facts + ONE hedged guess or question about how they handle THEIR OWN incoming leads, signups, demo requests or customer handoffs. No flattery.',\n  'body_rest: 45-65 words. One capability proof (paraphrase PROOF_POINT) + one concrete workflow idea for THEIR OWN lead or customer operations.',\n  'follow_up_1 and follow_up_2: 12-30 words each; follow_up_2 adds one concrete workflow idea. follow_up_3: under 12 words, the shortest of the three, a polite breakup. Each follow-up starts with the first name. first_line must NOT start with the first name.',\n  'linkedin_note: between 20 and 40 words (count them), ends with a short question.',\n  'Return ONLY a JSON object with exactly these string keys: angle, trigger, pain_point, value_proposition, email_subject, first_line, body_rest, follow_up_1, follow_up_2, follow_up_3, linkedin_note.'\n].join(' ');\n\nconst userPrompt = p => [\n  'COMPANY: ' + p.company_name + ' (' + p.domain + ')',\n  'COMPANY_NAME_TO_USE: ' + displayName(p),\n  'INDUSTRY: ' + p.industry + ' | EMPLOYEES: ' + p.employee_count + ' | FUNDING: ' + p.funding_stage,\n  'CLAY_SUMMARY: ' + String(p.clay_summary || 'none').slice(0, 450),\n  'TRIGGER_FACT: ' + (String(p.clay_trigger || '').slice(0, 200) || 'none'),\n  'SITE_DESCRIPTION: ' + String(p.__site || 'none').slice(0, 420),\n  'ALLOWED_COMPANY_TOOLS: ' + (companyTools(p).join(', ') || 'none'),\n  'PRODUCT_TERMS: ' + ((p.__terms || []).join(', ') || 'none'),\n  'TEAM_NOTE: ' + (smallTeam(p) ? 'small company of about ' + p.employee_count + ' people. There is no separate ops team. Say \"you\" or \"your team\", never \"ops team\" or \"operations team\".' : 'none'),\n  'CONTACT: ' + p.full_name + ', ' + p.title,\n  'FIRST_NAME: ' + firstName(p),\n  'PROOF_POINT: ' + pickProof(p),\n  'TONE: ' + (O.tone || 'direct, concise, evidence-first')\n].join('\\n');\n\n// ---------- assemble + validate (deterministic, no LLM) ----------\nconst KEYS_REQ = ['angle','trigger','pain_point','value_proposition','email_subject','first_line','body_rest','follow_up_1','follow_up_2','follow_up_3','linkedin_note'];\nconst assemble = (p, d) => {\n  const o = {};\n  for (const k of KEYS_REQ) o[k] = norm(d[k]);\n  o.first_line = o.first_line.replace(new RegExp('^' + firstName(p).replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&') + '\\\\s*[,:-]\\\\s*', 'i'), '').replace(/^./, c => c.toUpperCase());\n  o.proof_point = pickProof(p);\n  o.cta = CTA;\n  o.message_draft = 'Hi ' + firstName(p) + ',\\n\\n' + o.first_line + ' ' + o.body_rest + '\\n\\n' + CTA + '\\n\\n' + SENDER;\n  return o;\n};\nconst HEDGE = /\\b(likely|may|might|could|can|if|perhaps|probably|often|curious|wonder|guess|assume|typically|usually|tends?|sometimes|whether)\\b|\\?/i;\nconst ASSERT = /\\b(?:your|the|their)\\s+(?:[a-z-]+\\s+){0,2}(?:team|group|crew|engineers|reps|staff)\\s+(?:must|has to|have to|is forced|are forced|spends?|wastes?|struggles?|juggles?|is juggling|are juggling)\\b|\\bforc(?:es|ing) (?:your|the|their)\\b/i;\nconst validate = (p, o) => {\n  const bad = [];\n  for (const k of KEYS_REQ) if (!o[k]) bad.push('missing:' + k);\n  if (bad.length) return bad;\n  const all = KEYS_REQ.map(k => o[k]).join(' \\n ');\n  const lower0 = all.toLowerCase();\n  if (/[\\[\\]{}]|https?:\\/\\/|www\\./i.test(all)) bad.push('placeholder_or_link');\n  if (/[$%€]/.test(all)) bad.push('money_or_percent');\n  if (/\\bi hope\\b|\\bbest,|\\bregards\\b/i.test(all)) bad.push('boilerplate');\n  const total = wc(o.message_draft);\n  if (total < W.total[0] || total > W.total[1]) bad.push('words:' + total);\n  const nw = wc(o.linkedin_note);\n  if (nw < W.note[0] || nw > W.note[1] || o.linkedin_note.length > 300) bad.push('li_words:' + nw);\n  const f1 = wc(o.follow_up_1), f2 = wc(o.follow_up_2), f3 = wc(o.follow_up_3);\n  if (f1 > 40 || f2 > 40 || f3 > f1 || f3 > f2) bad.push('followups_length:' + f1 + '/' + f2 + '/' + f3);\n  const stem = String(p.domain || '').split('.')[0].toLowerCase();\n  const fl = o.first_line.toLowerCase();\n  if (!(fl.includes(String(p.company_name || '').toLowerCase()) || fl.includes(displayName(p).toLowerCase()) || (stem && fl.includes(stem)))) bad.push('first_line_no_company');\n  if (wc(o.email_subject) < 3 || o.email_subject.length > 80) bad.push('subject');\n  if (/\\b(your|their) (n8n|engine)\\b/i.test(all)) bad.push('wrong_perspective');\n  if (/\\b(i|we)('ve| have)? built\\b/i.test(all) && !PROOFS.filter(x => /^built /i.test(x)).map(x => x.toLowerCase().split(/\\s+/).slice(1, 4).join(' ')).some(k => lower0.includes(k))) bad.push('overclaims_built');\n  if (/\\b(in half|twice|double|doubling|triple|halve|halving|\\dx)\\b/i.test(all)) bad.push('quantified_claim');\n  if (/\\bjoint (workflow|project|solution|venture|effort)\\b|\\bpartner(ship)? with (you|your)\\b/i.test(all)) bad.push('partnership_pitch');\n  // an unhedged statement about their team's problems is a guess presented as a fact\n  // \"so your team spends less time on X\" describes the benefit, not their problem, so it is not counted\n  const asserted = all.split(/(?<=[.!?])\\s+|\\n/).map(s => s.replace(/\\bso (?:that )?(?:your|the|their)\\b/gi, 'so')).filter(s => ASSERT.test(s) && !HEDGE.test(s));\n  if (asserted.length) bad.push('asserted_pain');\n  // a guess dressed up as a conclusion (\"which likely means you spend considerable time ...\")\n  if (/\\b(?:considerable|significant|substantial|countless|a lot of|too much|hours of)\\s+(?:time|effort|hours|manual)\\b|\\b(?:which|that|this)\\s+(?:(?:likely|probably|surely|clearly)\\s+)?means\\b|\\bno doubt\\b|\\bi know (?:you|your)\\b/i.test(all)) bad.push('presumptuous');\n  if (smallTeam(p) && /\\b(?:ops|operations|revops|rev ops|sales ops|marketing ops)\\s+(?:team|department|staff)(?:'s)?\\b/i.test(all)) bad.push('ops_team_at_small_company');\n  // their product is not their problem: product words are allowed in first_line and trigger only\n  const offer = ['angle','pain_point','value_proposition','email_subject','body_rest','follow_up_1','follow_up_2','follow_up_3','linkedin_note'].map(k => o[k]).join(' \\n ');\n  const own = (p.__terms || []).filter(t => termRe(t).test(offer));\n  if (own.length) bad.push('own_product:' + own.join('+'));\n  // tool whitelist: a watched tool may appear only if the company uses it or my chosen proof mentions it\n  const okTools = new Set(companyTools(p).concat(WATCH.filter(t => has(o.proof_point.toLowerCase(), t))));\n  const lower = all.toLowerCase();\n  const rogue = WATCH.filter(t => has(lower, t) && !okTools.has(t));\n  if (rogue.length) bad.push('rogue_tools:' + rogue.join('+'));\n  // numbers must come from the facts. Words like n8n, b2b, web3 are names, not numbers.\n  const facts = (String(p.clay_summary || '') + ' ' + String(p.__site || '') + ' ' + p.employee_count + ' ' + o.proof_point + ' ' + CTA + ' ' + p.tech_stack + ' ' + String(p.clay_trigger || '')).toLowerCase();\n  const nums = (lower.replace(/\\b[a-z]+\\d[a-z0-9]*\\b/g, ' ').match(/\\d+/g) || []).filter(n => !facts.includes(n));\n  if (nums.length) bad.push('invented_numbers:' + nums.join(','));\n  return bad;\n};\n\nconst proofSentence = t => (/^can /i.test(t) ? 'I ' + t.replace(/^./, c => c.toLowerCase()) : /^built /i.test(t) ? 'I ' + t.replace(/^./, c => c.toLowerCase()) : t) + '.';\nconst templateDraft = p => {\n  const cap = t => t.replace(/\\b\\w/g, c => c.toUpperCase());\n  const tools = companyTools(p).slice(0, 2).map(cap).join(' and ');\n  const nm = displayName(p);\n  const fn = firstName(p);\n  const clayObs = (String(p.clay_summary || '').split(/\\.\\s/)[0] || '').replace(/\\.$/, '').slice(0, 150);\n  // No Clay summary: say only what was actually seen (a tool on their site), never a generic claim about the company.\n  const obs = clayObs || (tools ? 'I noticed ' + tools + ' on the ' + nm + ' site' : nm + ' came up while I was looking at B2B teams that run their own lead operations');\n  return {\n    angle: 'automation-audit', trigger: String(p.clay_trigger || '').slice(0, 200) || obs,\n    pain_point: 'Manual handoffs between lead data, CRM and reporting often grow with volume.',\n    value_proposition: 'Deterministic n8n and Clay pipelines that enrich, score and route leads without extra headcount.',\n    email_subject: nm + ': one lead-ops workflow idea',\n    first_line: obs + '. For a team like ' + nm + ', lead enrichment and routing often stay manual' + (tools && clayObs ? ' between tools such as ' + tools : '') + '.',\n    body_rest: 'I build deterministic automation layers that enrich, score and route leads without adding headcount, so your team can spend time on conversations instead of data entry. Relevant proof: ' + proofSentence(pickProof(p)),\n    follow_up_1: fn + ', adding one concrete idea: a scheduled n8n job that enriches new leads and writes scored rows to your CRM. Worth a short example?',\n    follow_up_2: fn + ', I can send a one-page diagram of the lead routing flow. No call needed.',\n    follow_up_3: fn + ', closing the loop. My door stays open if automation capacity comes up later.',\n    linkedin_note: 'Hi ' + fn + ', I build n8n and Clay pipelines that enrich and route leads for B2B teams like ' + nm + '. Open to a short workflow example?'\n  };\n};\n// The fallback text says \"CRM\". For a company that sells a CRM, that word is their product, so it is swapped out.\nconst templateFor = p => {\n  const t = templateDraft(p);\n  if (!(p.__terms || []).includes('crm')) return t;\n  for (const k of Object.keys(t)) t[k] = t[k].replace(/lead data, CRM and reporting/g, 'lead data and reporting').replace(/\\byour CRM\\b/g, 'your pipeline').replace(/\\bCRM\\b/g, 'pipeline');\n  return t;\n};\n\n// Plain-language repair hints for the rules a model most often misreads.\nconst hints = (bad) => {\n  const h = [];\n  const own = bad.find(b => b.startsWith('own_product:'));\n  if (own) h.push(' The words \"' + own.slice(12).split('+').join('\", \"') + '\" name what this company SELLS. Remove them from every field except first_line and trigger, and offer help with the company OWN lead handling instead (new signups, demo requests, enrichment, scoring, routing, follow-up, pipeline reporting).');\n  if (bad.includes('presumptuous')) h.push(' Do not conclude anything about their workload. Ask a short question instead.');\n  if (bad.includes('ops_team_at_small_company')) h.push(' This is a small company: write \"you\" or \"your team\", never \"ops team\".');\n  return h.join('');\n};\n\n// ---------- run ----------\nconst cooldown = {};   // step id -> timestamp until which the step is skipped\nconst hardFails = {};  // step id -> consecutive hard failures\nconst out = [];\nlet first = true;\nlet leftForNextRun = 0;\n\nfor (let pi = 0; pi < pairs.length; pi++) {\n  const p = pairs[pi];\n  // Stop early rather than hit the Code node time limit. Undrafted contacts stay \"new\" and are picked up next run.\n  if (Date.now() - T0 > RUN_BUDGET_MS) { leftForNextRun = pairs.length - pi; break; }\n  if (!first) await sleep(PACE_MS);\n  first = false;\n\n  p.__site = String(p.clay_summary || '').trim() ? '' : await siteFacts(p);\n  const factsLevel = String(p.clay_summary || '').trim() ? 'clay' : (p.__site ? 'site' : 'none');\n  p.__terms = productTerms(p);\n\n  let row = null, provider = 'template', calls = 0, fails = 0;\n  const errs = [];\n\n  for (const step of CHAIN) {\n    if (step.error) { errs.push(step.id + ':' + step.error); continue; }\n    if (!$env[step.key]) { errs.push(step.id + ':key_missing'); fails++; continue; }\n    if (cooldown[step.id] && Date.now() < cooldown[step.id]) { errs.push(step.id + ':cooling_down'); continue; }\n\n    let repair = '', waits = 0, transient = 0;\n    for (let attempt = 0; attempt < 4 && !row; attempt++) {\n      calls++;\n      const r = await callStep(step, SYSTEM, userPrompt(p) + repair);\n      if (r.retried_plain) errs.push(step.id + ':extras_rejected_retried_plain');\n\n      if (r.status === 200) {\n        hardFails[step.id] = 0;\n        const d = parseJSON(r.text);\n        const bad = d ? validate(p, assemble(p, d)) : ['unparseable_json'];\n        if (!bad.length) { row = assemble(p, d); provider = step.id; break; }\n        fails++; errs.push(step.id + ':invalid:' + bad.join('|').slice(0, 80));\n        if (repair) break;                       // one repair attempt per provider\n        repair = '\\n\\nYOUR PREVIOUS ANSWER WAS REJECTED FOR: ' + bad.join('|') + '.' + hints(bad) + ' Return the full JSON again with these problems fixed.';\n        continue;\n      }\n\n      fails++;\n      if (r.status === 429) {\n        const wait = retryAfter(r);\n        const waitMs = Math.ceil(wait * 1000) + 500;\n        if (wait <= MAX_WAIT_S && waits < 2 && waitMs <= WAIT_BUDGET_MS) {\n          errs.push(step.id + ':429_waited_' + Math.ceil(wait) + 's');\n          WAIT_BUDGET_MS -= waitMs; waits++;\n          await sleep(waitMs);\n          continue;\n        }\n        // Too long to wait here. Rest this model and let the next provider take over; it comes back after the cooldown.\n        cooldown[step.id] = Date.now() + Math.min(wait, 300) * 1000;\n        errs.push(step.id + ':429_cooldown_' + Math.ceil(Math.min(wait, 300)) + 's');\n        break;\n      }\n      if ([400, 401, 403, 404].includes(r.status)) {\n        // Wrong key, wrong model name or blocked account: no point retrying in this run.\n        cooldown[step.id] = Date.now() + 3600000;\n        errs.push(step.id + ':http_' + r.status + ':' + (errText(r.body) || r.err).slice(0, 70));\n        break;\n      }\n      // 5xx, timeout or network error\n      errs.push(step.id + ':' + (r.status ? 'http_' + r.status : 'network') + ':' + (errText(r.body) || r.err).slice(0, 50));\n      if (r.status >= 500 && transient < 1) { transient++; await sleep(3000); continue; }\n      hardFails[step.id] = (hardFails[step.id] || 0) + 1;\n      if (hardFails[step.id] >= 2) cooldown[step.id] = Date.now() + 120000;\n      break;\n    }\n    if (row) break;\n  }\n\n  if (!row) {\n    row = assemble(p, templateFor(p));\n    const bad = validate(p, row);\n    if (bad.length) errs.push('template_warn:' + bad.join('|'));\n  }\n\n  const flags = [];\n  if (p.flags) flags.push(p.flags);\n  flags.push('provider=' + provider);\n  if (provider === 'template') flags.push('template_review_hard');\n  flags.push('facts=' + factsLevel);\n  flags.push('trigger=' + (String(p.clay_trigger || '').trim() ? (p.clay_trigger_source || 'clay') : 'none'));\n  if (factsLevel === 'none') flags.push('no_company_facts');\n  flags.push('facts_tools=' + (companyTools(p).join('+') || 'none'));\n  if (p.__terms.length) flags.push('their_product=' + p.__terms.join('+'));\n\n  out.push({ json: Object.assign({\n    run_date: new Date().toISOString(),\n    outreach_id: 'or_' + String(p.contact_id || '').replace(/\\s+/g, '_') + '_' + Date.now().toString(36),\n    account_id: p.account_id, contact_id: p.contact_id, company_name: p.company_name, contact_name: p.full_name,\n    channel: p.channel }, (() => { const r = Object.assign({}, row); delete r.body_rest; return r; })(), {\n    risk_notes: (flags.join('; ') + (errs.length ? ' | llm_errors: ' + errs.join(' ; ') : '')).slice(0, 450),\n    approval_status: 'pending', send_status: 'not_sent', sent_at: '', reply_received: '',\n    notes: p.__site ? ('Site says: ' + p.__site).slice(0, 450) : '',\n    llm_provider: provider, llm_calls: calls, llm_failures: fails }) });\n}\n\nif (leftForNextRun && out.length) {\n  const last = out[out.length - 1].json;\n  last.risk_notes = ('run_budget_hit: ' + leftForNextRun + ' contact(s) left for the next run; ' + last.risk_notes).slice(0, 450);\n}\nreturn out;"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -3944,310 +3877,6 @@
       ],
       "id": "5969443d-01f5-4f2c-b275-f138f34ef4ef",
       "name": "Draft Outreach"
-    },
-    {
-      "parameters": {
-        "authentication": "serviceAccount",
-        "operation": "append",
-        "documentId": {
-          "__rl": true,
-          "value": "YOUR_SPREADSHEET_ID",
-          "mode": "list",
-          "cachedResultName": "personal-gtm-engine",
-          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit?usp=drivesdk"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": 1756566230,
-          "mode": "list",
-          "cachedResultName": "outreach_queue",
-          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit#gid=1756566230"
-        },
-        "columns": {
-          "mappingMode": "autoMapInputData",
-          "value": {},
-          "matchingColumns": [],
-          "schema": [
-            {
-              "id": "run_date",
-              "displayName": "run_date",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "outreach_id",
-              "displayName": "outreach_id",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "account_id",
-              "displayName": "account_id",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "contact_id",
-              "displayName": "contact_id",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "company_name",
-              "displayName": "company_name",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "contact_name",
-              "displayName": "contact_name",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "channel",
-              "displayName": "channel",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "angle",
-              "displayName": "angle",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "trigger",
-              "displayName": "trigger",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "pain_point",
-              "displayName": "pain_point",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "value_proposition",
-              "displayName": "value_proposition",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "proof_point",
-              "displayName": "proof_point",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "cta",
-              "displayName": "cta",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "email_subject",
-              "displayName": "email_subject",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "first_line",
-              "displayName": "first_line",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "message_draft",
-              "displayName": "message_draft",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "follow_up_1",
-              "displayName": "follow_up_1",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "follow_up_2",
-              "displayName": "follow_up_2",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "follow_up_3",
-              "displayName": "follow_up_3",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "linkedin_note",
-              "displayName": "linkedin_note",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "risk_notes",
-              "displayName": "risk_notes",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "approval_status",
-              "displayName": "approval_status",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "send_status",
-              "displayName": "send_status",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "sent_at",
-              "displayName": "sent_at",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "reply_received",
-              "displayName": "reply_received",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "notes",
-              "displayName": "notes",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "llm_provider",
-              "displayName": "llm_provider",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "llm_calls",
-              "displayName": "llm_calls",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            },
-            {
-              "id": "llm_failures",
-              "displayName": "llm_failures",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "type": "string",
-              "canBeUsedToMatch": true
-            }
-          ],
-          "attemptToConvertTypes": false,
-          "convertFieldsToString": false
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.7,
-      "position": [
-        6720,
-        800
-      ],
-      "id": "ad229bf2-cc05-4145-917e-a65b36e174c8",
-      "name": "Append Outreach Queue",
-      "credentials": {
-        "googleApi": {
-          "name": "Google Service Account account"
-        }
-      }
     },
     {
       "parameters": {
@@ -4522,32 +4151,76 @@
       ],
       "id": "ccec406f-9946-41b6-a747-43d9a998f17e",
       "name": "YC Directory Source"
+    },
+    {
+      "id": "3d194707-d051-4fcf-b239-005512c4d3d9",
+      "name": "Fetch Config",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        224,
+        224
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "select * from n8n_config_sheet;"
+      },
+      "alwaysOutputData": false,
+      "executeOnce": true,
+      "credentials": {
+        "postgres": {
+          "name": "Neon GTM"
+        }
+      }
+    },
+    {
+      "id": "c57456a4-a0b4-4a89-98b3-c06176d7fa1e",
+      "name": "Fetch Outreach Queue",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        5824,
+        896
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "select * from n8n_outreach_queue_sheet;"
+      },
+      "alwaysOutputData": true,
+      "executeOnce": true,
+      "credentials": {
+        "postgres": {
+          "name": "Neon GTM"
+        }
+      }
+    },
+    {
+      "id": "76b429a2-a81b-47cf-ba5b-184057767860",
+      "name": "Append Outreach Queue",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        6720,
+        800
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {
+          "queryReplacement": "={{ [ JSON.stringify($json) ] }}"
+        },
+        "query": "select * from gtm_insert_draft($1::jsonb);"
+      },
+      "executeOnce": false,
+      "credentials": {
+        "postgres": {
+          "name": "Neon GTM"
+        }
+      }
     }
   ],
-  "pinData": {},
   "connections": {
-    "Manual Trigger": {
-      "main": [
-        [
-          {
-            "node": "Fetch Config",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Fetch Config": {
-      "main": [
-        [
-          {
-            "node": "Load Config",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Load Config": {
       "main": [
         [
@@ -4615,11 +4288,6 @@
             "index": 0
           }
         ]
-      ]
-    },
-    "Append Accounts": {
-      "main": [
-        []
       ]
     },
     "Run Stats": {
@@ -4735,11 +4403,6 @@
             "index": 0
           }
         ]
-      ]
-    },
-    "Update Accounts Queued": {
-      "main": [
-        []
       ]
     },
     "Fetch Clay Results": {
@@ -4947,11 +4610,6 @@
         ]
       ]
     },
-    "Remember Domain": {
-      "main": [
-        []
-      ]
-    },
     "Only New Domain": {
       "main": [
         [
@@ -5047,50 +4705,6 @@
         ]
       ]
     },
-    "Draft Outreach": {
-      "main": [
-        [
-          {
-            "node": "Append Outreach Queue",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Append Outreach Queue": {
-      "main": [
-        [
-          {
-            "node": "Update Contacts Used",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Fetch Accounts For Outreach": {
-      "main": [
-        [
-          {
-            "node": "Fetch Outreach Queue",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Fetch Outreach Queue": {
-      "main": [
-        [
-          {
-            "node": "Select Outreach Pairs",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Select Outreach Pairs": {
       "main": [
         [
@@ -5141,6 +4755,72 @@
           }
         ]
       ]
+    },
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Config": {
+      "main": [
+        [
+          {
+            "node": "Load Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Accounts For Outreach": {
+      "main": [
+        [
+          {
+            "node": "Fetch Outreach Queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Outreach Queue": {
+      "main": [
+        [
+          {
+            "node": "Select Outreach Pairs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Draft Outreach": {
+      "main": [
+        [
+          {
+            "node": "Append Outreach Queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Outreach Queue": {
+      "main": [
+        [
+          {
+            "node": "Update Contacts Used",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
@@ -5149,11 +4829,14 @@
     "binaryMode": "separate",
     "timeSavedMode": "fixed",
     "callerPolicy": "workflowsFromSameOwner",
-    "availableInMCP": false
+    "availableInMCP": true
   },
   "meta": {
-    "templateCredsSetupCompleted": true
+    "templateCredsSetupCompleted": true,
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp"
   },
+  "tags": [],
   "nodeGroups": [],
-  "tags": []
+  "pinData": {}
 }

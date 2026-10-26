@@ -1,36 +1,46 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# GTM Console
 
-## Getting Started
+Private review console for the Personal GTM Engine: Next.js 16 on Vercel, reading and writing Neon Postgres. One user, behind a password gate.
 
-First, run the development server:
+| Page | What it does |
+|---|---|
+| `/queue` | Drafts to review: approve, edit, reject, re-draft, **Mark sent** |
+| `/accounts` | Accounts with score breakdown, Clay summary and trigger; veto an account |
+| `/config` | Engine switches, daily draft cap and the full config, saved as a new version |
+| `/runs` | Engine runs, sync runs and console activity |
+
+The console writes only through three Postgres functions in `../db/schema.sql`: `gtm_review`, `gtm_veto_account` and `gtm_save_config`. Each checks the state transition and logs to `console_events`.
+
+## Environment
+
+Copy `.env.example` to `.env.local` (git ignores it) and fill in:
+
+| Variable | Value |
+|---|---|
+| `DATABASE_URL` | Neon pooled connection string (host contains `-pooler`) |
+| `DASHBOARD_PASSWORD` | 12+ characters, used only by you |
+| `SESSION_SECRET` | 32+ random characters |
+
+## Run locally
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev        # http://localhost:3000
+npm run build      # must pass before every push
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+On Windows PowerShell, use `npm.cmd` if script execution is blocked.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Deploy
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Vercel: import the repo with **Root Directory** = `gtm-console`, set the three variables, deploy. Vercel rebuilds on every push to `main`. Check: `/queue` in a private window redirects to `/login`.
 
-## Learn More
+## Guarded files
 
-To learn more about Next.js, take a look at the following resources:
+The auth, session, database and server-action files must stay byte-identical to the Sprint 10 guide. From the repo root:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+node scripts/s10_extract_console_files.mjs --check
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+It must print `All hand-written files match the guide`.

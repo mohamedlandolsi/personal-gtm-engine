@@ -193,18 +193,7 @@
     }
   },
   "digest": {
-    "enabled": true,
-    "hot_score": 80,
-    "warm_score": 65,
-    "max_embeds": 8,
-    "post_when_empty": false,
-    "include_statuses": [
-      "pending",
-      "approved",
-      "edited"
-    ],
-    "sheet_url": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit",
-    "outreach_gid": "YOUR_OUTREACH_QUEUE_TAB_GID"
+    "enabled": false
   },
   "sources": {
     "apollo": {

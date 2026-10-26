@@ -1,0 +1,708 @@
+{
+  "name": "GTM Neon Sync",
+  "description": "Sprint 10 strangler sync: pushes console decisions from Neon to Sheets, then mirrors Sheets tabs into Neon via gtm_sync_pull(). Every 15 min.",
+  "nodes": [
+    {
+      "id": "bd902d62-cf60-4d14-8fe8-b990ee125325",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        160
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "e837561f-c971-468d-99ff-531c3837f6c1",
+      "name": "Read Push Rows",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        240,
+        260
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select tab, key, version, data from gtm_sync_push_rows();",
+        "options": {}
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "name": "Neon GTM"
+        }
+      }
+    },
+    {
+      "id": "4ee326d6-177c-4874-8271-ca43ce6ade39",
+      "name": "Every 15 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        360
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 15
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "def25e36-f3cd-4da1-84ed-6b9a3eee207c",
+      "name": "Only Config Push",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "onlyConfigPush-tab",
+              "leftValue": "={{ $json.tab }}",
+              "rightValue": "config",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "df94a16a-3e01-4d20-983d-c0e5df5c1f7e",
+      "name": "Update Config Cell",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        720,
+        0
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "update",
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_SPREADSHEET_ID"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gid=0",
+          "cachedResultName": "config",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "key": "={{ $json.data.key }}",
+            "value": "={{ $json.data.value }}",
+            "updated_at": "={{ $json.data.updated_at }}"
+          },
+          "matchingColumns": [
+            "key"
+          ],
+          "schema": [
+            {
+              "id": "key",
+              "displayName": "key",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "value",
+              "displayName": "value",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "updated_at",
+              "displayName": "updated_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "credentials": {
+        "googleApi": {
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "id": "e16a9021-d972-487b-a963-a441f0b02bb5",
+      "name": "Only Contact Push",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        480,
+        320
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "onlyContactPush-tab",
+              "leftValue": "={{ $json.tab }}",
+              "rightValue": "contacts",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "b3f21f22-b436-4b05-acdd-ef9fb27b2ced",
+      "name": "Update Contact Rows",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        720,
+        320
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "update",
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_SPREADSHEET_ID"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": 554904753,
+          "cachedResultName": "contacts",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit#gid=554904753"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "contact_id": "={{ $json.data.contact_id }}",
+            "status": "={{ $json.data.status }}"
+          },
+          "matchingColumns": [
+            "contact_id"
+          ],
+          "schema": [
+            {
+              "id": "contact_id",
+              "displayName": "contact_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "credentials": {
+        "googleApi": {
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "id": "d52415f9-2eaa-47c1-b52d-423b97525a82",
+      "name": "Only Account Push",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        480,
+        480
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "onlyAccountPush-tab",
+              "leftValue": "={{ $json.tab }}",
+              "rightValue": "accounts",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "7b63f87d-bd2f-4e2e-ae50-ccb694724f26",
+      "name": "Update Account Rows",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        720,
+        480
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "update",
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_SPREADSHEET_ID"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": 17930613,
+          "cachedResultName": "accounts",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit#gid=17930613"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "account_id": "={{ $json.data.account_id }}",
+            "status": "={{ $json.data.status }}"
+          },
+          "matchingColumns": [
+            "account_id"
+          ],
+          "schema": [
+            {
+              "id": "account_id",
+              "displayName": "account_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "credentials": {
+        "googleApi": {
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "id": "755fec32-e42c-47af-a551-978008799e37",
+      "name": "Read Accounts Tab",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        480,
+        720
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_SPREADSHEET_ID"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": 17930613,
+          "cachedResultName": "accounts",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit#gid=17930613"
+        },
+        "options": {}
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleApi": {
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "id": "4e8f2f45-4232-4f28-9520-3d3e5e6fa7fb",
+      "name": "Read Contacts Tab",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        700,
+        720
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_SPREADSHEET_ID"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": 554904753,
+          "cachedResultName": "contacts",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit#gid=554904753"
+        },
+        "options": {}
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleApi": {
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "id": "a7d79268-1bf6-4e99-b880-d37ef92acc16",
+      "name": "Read Ops Tab",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        920,
+        720
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_SPREADSHEET_ID"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": 1712808581,
+          "cachedResultName": "ops",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit#gid=1712808581"
+        },
+        "options": {}
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleApi": {
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "id": "e945e08a-9435-44fb-b65f-ad2e646a4e0d",
+      "name": "Read Config Tab",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1140,
+        720
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "read",
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "YOUR_SPREADSHEET_ID"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gid=0",
+          "cachedResultName": "config",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit#gid=0"
+        },
+        "options": {}
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleApi": {
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "id": "203f8632-3cc1-4af4-a526-c1f8e4709be5",
+      "name": "Pack Sync Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        720
+      ],
+      "parameters": {
+        "jsCode": "// Pack Sync Payload (Code node, mode: Run Once for All Items)\n// Turns the four Sheets reads into one typed JSON payload for gtm_sync_pull().\n// Sprint 12: outreach_queue lives in Neon only (outreach_sor = neon) and the digest is retired,\n// so those two tabs are no longer read. gtm_sync_pull() treats the missing keys as empty.\n// Deterministic gate: bad numbers or dates become null plus a warning, so one\n// messy cell can never abort the database write.\nconst safeAll = (name) => { try { return $(name).all().map(i => i.json); } catch (e) { return []; } };\nconst warnings = [];\nconst T = 'txt', I = 'int', N = 'num', D = 'ts';\n\nconst SPECS = {\n  accounts: { node: 'Read Accounts Tab', key: 'account_id', cols: {\n    account_id: T, run_date: D, source: T, company_name: T, domain: T, website: T, industry: T,\n    company_type: T, employee_count: I, location_raw: T, country: T, timezone_utc_offset: N,\n    funding_stage: T, final_score: I, priority: T, why_match: T, red_flags: T, score_breakdown: T,\n    confidence: I, status: T, linkedin_url: T, tech_stack: T, funding_proxy_score: I,\n    automation_need_score: I, enrichment_status: T, clay_summary: T, clay_status: T,\n    clay_enriched_at: D, contact_feasibility_score: I, contact_status: T,\n    clay_trigger: T, clay_trigger_source: T, clay_trigger_date: T } },\n  contacts: { node: 'Read Contacts Tab', key: 'contact_id', cols: {\n    contact_id: T, run_date: D, account_id: T, company_name: T, domain: T, full_name: T, title: T,\n    role_category: T, email: T, email_status: T, linkedin_url: T, phone: T, source: T,\n    confidence: I, contact_score: I, preferred_channel: T, status: T, contact_key: T, account_domain: T } },\n  ops: { node: 'Read Ops Tab', key: 'run_at', cols: {\n    run_at: D, config_rev: T, source: T, seed_rows: I, seen_rows_pre: I, after_filters: I,\n    accounts_written: I, min_account_score: I, warnings: T, errors_sample: T, rejection_summary: T,\n    apollo_companies: I, source_errors: T, enriched_rows: I, enrich_errors: T, clay_queued: I,\n    clay_merged: I, contacts_discovered: I, contacts_written: I, outreach_drafts_written: I,\n    llm_calls: I, llm_failures: I } }\n};\n\nconst ENUMS = {\n  approval_status: { allowed: ['pending', 'approved', 'edited', 'rejected', 'superseded'], fallback: 'pending' },\n  send_status: { allowed: ['not_sent', 'sent', 'bounced'], fallback: 'not_sent' }\n};\n\nconst blank = (v) => v === null || v === undefined || (typeof v === 'string' && v.trim() === '');\n\nfunction conv(type, v, ctx) {\n  if (blank(v)) return null;\n  if (type === T) return String(v);\n  if (type === I || type === N) {\n    const n = typeof v === 'number' ? v : Number(String(v).trim().replace(',', '.'));\n    if (!Number.isFinite(n)) { warnings.push(`not_a_number ${ctx}=${String(v).slice(0, 20)}`); return null; }\n    return type === I ? Math.round(n) : n;\n  }\n  if (type === D) {\n    const d = new Date(v);\n    if (isNaN(d.getTime())) { warnings.push(`bad_timestamp ${ctx}=${String(v).slice(0, 25)}`); return null; }\n    return d.toISOString();\n  }\n  return v;\n}\n\nconst payload = {};\nconst stats = {};\n\nfor (const [table, spec] of Object.entries(SPECS)) {\n  const rows = safeAll(spec.node);\n  const byKey = new Map();\n  let skipped = 0, dupes = 0;\n\n  for (const raw of rows) {\n    const rawKey = raw[spec.key];\n    const key = spec.cols[spec.key] === D\n      ? conv(D, rawKey, `${table}.${spec.key}`)\n      : (blank(rawKey) ? null : String(rawKey).trim());\n    if (!key || key.startsWith('__')) { skipped++; continue; }   // empty rows and __placeholder__ rows\n\n    const out = {};\n    for (const [col, type] of Object.entries(spec.cols)) {\n      out[col] = col === spec.key ? key : conv(type, raw[col], `${table}.${col}@${key}`);\n    }\n\n    if (table === 'outreach_queue') {\n      for (const [col, rule] of Object.entries(ENUMS)) {\n        const v = String(out[col] || '').trim().toLowerCase();\n        if (!rule.allowed.includes(v)) {\n          if (v) warnings.push(`bad_${col} ${key}=${v} -> ${rule.fallback}`);\n          out[col] = rule.fallback;\n        } else {\n          out[col] = v;\n        }\n      }\n    }\n\n    if (byKey.has(key)) dupes++;\n    byKey.set(key, out);                                           // last row wins\n  }\n\n  payload[table] = [...byKey.values()];\n  stats[table] = { read: rows.length, kept: byKey.size, skipped, dupes };\n  if (dupes) warnings.push(`${table}: ${dupes} duplicate keys in sheet, kept the last one`);\n}\n\n// Config cell (config!B2). Imported once, then only checked for drift.\nconst cfgRow = safeAll('Read Config Tab').find(r => String(r.key || '').trim() === 'config_json');\npayload.config_value = cfgRow ? String(cfgRow.value ?? '') : null;\n\n// What the push branches wrote to Sheets in this run. A branch that did not\n// run returns [], so its rows stay dirty and are pushed again next time.\nconst pushed = (node) => safeAll(node)\n  .filter(r => r && r.key && r.version)\n  .map(r => ({ key: String(r.key), version: String(r.version) }));\npayload.pushed = {\n  config: pushed('Only Config Push'),\n  contacts: pushed('Only Contact Push'),\n  accounts: pushed('Only Account Push')\n};\n\npayload.warnings = warnings.slice(0, 50);\n\nreturn [{ json: { payload, stats } }];\n",
+        "language": "javaScript",
+        "mode": "runOnceForAllItems"
+      }
+    },
+    {
+      "id": "93a7dbe4-be13-418c-a1a0-07cf0b494837",
+      "name": "Pull Into Neon",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        1580,
+        720
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select gtm_sync_pull($1::jsonb) as result;",
+        "options": {
+          "queryReplacement": "={{ [ JSON.stringify($json.payload) ] }}"
+        }
+      },
+      "executeOnce": true,
+      "credentials": {
+        "postgres": {
+          "name": "Neon GTM"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Push Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Push Rows": {
+      "main": [
+        [
+          {
+            "node": "Only Config Push",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Only Contact Push",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Only Account Push",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Read Accounts Tab",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every 15 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Read Push Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Only Config Push": {
+      "main": [
+        [
+          {
+            "node": "Update Config Cell",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Only Contact Push": {
+      "main": [
+        [
+          {
+            "node": "Update Contact Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Only Account Push": {
+      "main": [
+        [
+          {
+            "node": "Update Account Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Accounts Tab": {
+      "main": [
+        [
+          {
+            "node": "Read Contacts Tab",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Config Tab": {
+      "main": [
+        [
+          {
+            "node": "Pack Sync Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pack Sync Payload": {
+      "main": [
+        [
+          {
+            "node": "Pull Into Neon",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Contacts Tab": {
+      "main": [
+        [
+          {
+            "node": "Read Ops Tab",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Ops Tab": {
+      "main": [
+        [
+          {
+            "node": "Read Config Tab",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true,
+    "timezone": "Africa/Tunis"
+  },
+  "meta": {
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp"
+  },
+  "tags": [],
+  "nodeGroups": [],
+  "pinData": {}
+}

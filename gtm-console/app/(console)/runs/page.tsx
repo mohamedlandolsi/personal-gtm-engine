@@ -11,7 +11,6 @@ export const instant = false;
 
 const TABS = [
   { key: "engine", label: "Engine" },
-  { key: "digest", label: "Digest" },
   { key: "sync", label: "Sync" },
   { key: "activity", label: "Activity" },
 ] as const;
@@ -37,19 +36,6 @@ type EngineRun = {
   errors_sample: string | null;
 };
 
-type DigestRun = {
-  run_at: Date;
-  config_rev: string | null;
-  queue_rows: number | null;
-  candidates: number | null;
-  embedded: number | null;
-  overflow: number | null;
-  pending_announced: number | null;
-  approved_announced: number | null;
-  discord_status: string | null;
-  error_sample: string | null;
-};
-
 type SyncRun = {
   id: number;
   run_at: Date;
@@ -61,7 +47,6 @@ type SyncRun = {
   pulled_contacts: number | null;
   new_outreach: number | null;
   new_ops: number | null;
-  new_digest_ops: number | null;
   config_state: string | null;
   warnings: string | null;
   duration_ms: number | null;
@@ -206,57 +191,6 @@ function EngineTab({ rows }: { rows: EngineRun[] }) {
   );
 }
 
-function digestFlag(r: DigestRun) {
-  return r.discord_status === "failed" ? <Flag tone="danger">Discord post failed</Flag> : <span>{r.discord_status}</span>;
-}
-
-function DigestTab({ rows }: { rows: DigestRun[] }) {
-  if (rows.length === 0) return <Empty text="No digest runs yet. The digest workflow writes one row per run." href="/runs" action="Back to engine runs" />;
-  return (
-    <>
-      <TableShell>
-        <thead>
-          <tr className={HEAD}>
-            <Th>Run</Th><Th>Config rev</Th><Th right>Queue</Th><Th right>Candidates</Th><Th right>Embedded</Th>
-            <Th right>Overflow</Th><Th right>Pending</Th><Th right>Approved</Th><Th>Discord</Th><Th>Error</Th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border">
-          {rows.map((r) => (
-            <tr key={r.run_at.toISOString()} className={ROW}>
-              <td className="px-3 py-2.5"><Time at={r.run_at} /></td>
-              <td className="max-w-[12rem] px-3 py-2.5 font-mono text-[0.8125rem] wrap-anywhere">{r.config_rev}</td>
-              <Num>{n(r.queue_rows)}</Num>
-              <Num>{n(r.candidates)}</Num>
-              <Num>{n(r.embedded)}</Num>
-              <Num>{n(r.overflow)}</Num>
-              <Num>{n(r.pending_announced)}</Num>
-              <Num>{n(r.approved_announced)}</Num>
-              <td className="px-3 py-2.5 whitespace-nowrap">{digestFlag(r)}</td>
-              <td className="max-w-[20rem] px-3 py-2.5 text-[0.8125rem]"><Expandable text={r.error_sample} /></td>
-            </tr>
-          ))}
-        </tbody>
-      </TableShell>
-      <Blocks>
-        {rows.map((r) => (
-          <li key={r.run_at.toISOString()} className="space-y-1 px-4 py-3 text-[0.9375rem]">
-            <div className="flex items-baseline gap-2">
-              <Time at={r.run_at} />
-              <span className="ml-auto">{digestFlag(r)}</span>
-            </div>
-            <p className="tabular">
-              <strong>{n(r.embedded) || 0}</strong> embedded of <strong>{n(r.candidates) || 0}</strong> candidates,{" "}
-              {n(r.pending_announced) || 0} pending and {n(r.approved_announced) || 0} approved announced
-            </p>
-            {r.error_sample ? <div className="text-[0.8125rem]"><Expandable text={`Error: ${r.error_sample}`} /></div> : null}
-          </li>
-        ))}
-      </Blocks>
-    </>
-  );
-}
-
 function syncFlag(r: SyncRun) {
   if (r.config_state === "drift") return <Flag tone="danger">Config drift</Flag>;
   if (r.warnings && r.warnings.trim() !== "") return <Flag tone="warn">Warnings</Flag>;
@@ -276,7 +210,7 @@ function SyncTab({ rows }: { rows: SyncRun[] }) {
         <thead>
           <tr className={HEAD}>
             <Th>Run</Th><Th right>Pushed</Th><Th right>Pulled</Th><Th right>New drafts</Th><Th right>New ops</Th>
-            <Th right>New digests</Th><Th>Config</Th><Th>Warnings</Th><Th right>Took</Th>
+            <Th>Config</Th><Th>Warnings</Th><Th right>Took</Th>
           </tr>
         </thead>
         <tbody className="divide-y divide-border">
@@ -300,7 +234,6 @@ function SyncTab({ rows }: { rows: SyncRun[] }) {
                 </td>
                 <Num>{n(r.new_outreach)}</Num>
                 <Num>{n(r.new_ops)}</Num>
-                <Num>{n(r.new_digest_ops)}</Num>
                 <td className="px-3 py-2.5 whitespace-nowrap">
                   {r.config_state === "drift" ? <Flag tone="danger">Config drift</Flag> : (r.config_state ?? "").replace(/_/g, " ")}
                 </td>
@@ -410,16 +343,10 @@ export default async function RunsPage({ searchParams }: PageProps<"/runs">) {
              llm_calls, llm_failures, warnings, errors_sample
       from ops order by run_at desc limit 30`) as EngineRun[];
     body = <EngineTab rows={rows} />;
-  } else if (tab === "digest") {
-    const rows = (await sql`
-      select run_at, config_rev, queue_rows, candidates, embedded, overflow,
-             pending_announced, approved_announced, discord_status, error_sample
-      from digest_ops order by run_at desc limit 30`) as DigestRun[];
-    body = <DigestTab rows={rows} />;
   } else if (tab === "sync") {
     const rows = (await sql`
       select id::int as id, run_at, pushed_config, pushed_outreach, pushed_contacts, pushed_accounts,
-             pulled_accounts, pulled_contacts, new_outreach, new_ops, new_digest_ops,
+             pulled_accounts, pulled_contacts, new_outreach, new_ops,
              config_state, warnings, duration_ms
       from sync_ops order by run_at desc, id desc limit 30`) as SyncRun[];
     body = <SyncTab rows={rows} />;

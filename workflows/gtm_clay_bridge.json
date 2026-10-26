@@ -1,5 +1,6 @@
 {
   "name": "GTM Clay Bridge",
+  "description": "Clay accounts import: clay_export_accounts -> clay_results (new domains) and accounts.clay_trigger* (all domains). Idempotent. Manual.",
   "nodes": [
     {
       "id": "3de2d88c-a549-4f55-8601-384c520a56e0",
@@ -419,9 +420,184 @@
           "name": "Google Service Account account"
         }
       }
+    },
+    {
+      "id": "f8005c30-7492-4edd-b9af-f1554538eb1e",
+      "name": "Read Accounts",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        448,
+        240
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "documentId": {
+          "__rl": true,
+          "cachedResultName": "personal-gtm-engine",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit?usp=drivesdk",
+          "mode": "list",
+          "value": "YOUR_SPREADSHEET_ID"
+        },
+        "options": {},
+        "sheetName": {
+          "__rl": true,
+          "cachedResultName": "accounts",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit#gid=17930613",
+          "mode": "list",
+          "value": 17930613
+        }
+      },
+      "alwaysOutputData": true,
+      "executeOnce": true,
+      "credentials": {
+        "googleApi": {
+          "name": "Google Service Account account"
+        }
+      }
+    },
+    {
+      "id": "ac0e547e-5f35-4ae8-9e0d-ff538d0042cf",
+      "name": "Map Triggers",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        672,
+        240
+      ],
+      "parameters": {
+        "jsCode": "// Copies Clay trigger columns from the raw export onto accounts, matched by domain.\n// Re-running writes the same values again, so it is safe.\nconst safeAll = (n) => { try { return $(n).all().map(i => i.json); } catch (e) { return []; } };\nconst norm = (d) => String(d || '').toLowerCase().trim()\n  .replace(/^https?:\\/\\//, '').replace(/^www\\./, '').split('/')[0];\nconst key = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');\nconst pick = (row, names) => {\n  for (const n of names) {\n    for (const k of Object.keys(row)) {\n      if (key(k.split('::').pop()) === key(n)) {\n        const v = row[k];\n        if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();\n      }\n    }\n  }\n  return '';\n};\n\n// Draft Outreach rejects $ % EUR signs, links and [] {} anywhere in a draft, so clean them here (deterministic gate).\nconst CUR = { '$': 'USD', '€': 'EUR', '£': 'GBP' };\nconst clean = (s) => String(s || '')\n  .replace(/https?:\\/\\/\\S+|www\\.\\S+/gi, '')\n  .replace(/([$€£])\\s?(\\d(?:[\\d.,]*\\d)?)(\\s?(?:k|m|mn|b|bn|million|billion)\\b)?/gi, (m, c, n, u) => n + (u || '') + ' ' + CUR[c] + ' ')\n  .replace(/[$€£]/g, '')\n  .replace(/(\\d)\\s?%/g, '$1 percent').replace(/%/g, '')\n  .replace(/[\\[\\]{}]/g, '')\n  .replace(/\\s+/g, ' ').replace(/\\s+([),.;:])/g, '$1').trim();\n// \"Seed ($5M) on 2026-03-12\" -> \"Seed (5M USD) on 2026-03-12\"; \"grew 40%\" -> \"grew 40 percent\"\n\nconst known = new Set(safeAll('Read Accounts').map(a => norm(a.domain)).filter(Boolean));\nconst stats = { export_rows: 0, written: 0, no_trigger: 0, unknown_domain: 0, cleaned: 0 };\nconst out = [];\n\nfor (const r of safeAll('Read Clay Export')) {\n  stats.export_rows++;\n  const domain = norm(pick(r, ['domain_clean', 'domain']));\n  if (!known.has(domain)) { stats.unknown_domain++; continue; }\n  const raw = pick(r, ['trigger_fact']).replace(/\\s+/g, ' ');\n  const fact = clean(raw);\n  if (fact !== raw) stats.cleaned++;\n  if (!fact || /^(none|unknown|n\\/a|null)$/i.test(fact)) { stats.no_trigger++; continue; }\n  const date = pick(r, ['trigger_date']);\n  stats.written++;\n  out.push({ json: {\n    domain,\n    clay_trigger: fact.slice(0, 200),\n    clay_trigger_source: pick(r, ['trigger_source']).toLowerCase().slice(0, 20),\n    clay_trigger_date: /^\\d{4}-\\d{2}-\\d{2}/.test(date) ? date.slice(0, 10) : ''\n  } });\n}\n\nreturn out.concat([{ json: { __stats: JSON.stringify(stats) } }]);\n",
+        "language": "javaScript",
+        "mode": "runOnceForAllItems"
+      }
+    },
+    {
+      "id": "74043876-7500-40ed-9f78-28efd80f2f79",
+      "name": "Only Trigger Rows",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        896,
+        240
+      ],
+      "parameters": {
+        "conditions": {
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "only-rows-domain",
+              "leftValue": "={{ $json.domain }}",
+              "operator": {
+                "operation": "exists",
+                "singleValue": true,
+                "type": "string"
+              },
+              "rightValue": ""
+            }
+          ],
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          }
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "a9c90253-97dc-4099-b43e-5e74e6d768fc",
+      "name": "Update Account Triggers",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1120,
+        240
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "columns": {
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false,
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "domain"
+          ],
+          "schema": [
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "domain",
+              "id": "domain",
+              "removed": false,
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "clay_trigger",
+              "id": "clay_trigger",
+              "removed": false,
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "clay_trigger_source",
+              "id": "clay_trigger_source",
+              "removed": false,
+              "required": false,
+              "type": "string"
+            },
+            {
+              "canBeUsedToMatch": true,
+              "defaultMatch": false,
+              "display": true,
+              "displayName": "clay_trigger_date",
+              "id": "clay_trigger_date",
+              "removed": false,
+              "required": false,
+              "type": "string"
+            }
+          ],
+          "value": {
+            "clay_trigger": "={{ $json.clay_trigger }}",
+            "clay_trigger_date": "={{ $json.clay_trigger_date }}",
+            "clay_trigger_source": "={{ $json.clay_trigger_source }}",
+            "domain": "={{ $json.domain }}"
+          }
+        },
+        "documentId": {
+          "__rl": true,
+          "cachedResultName": "personal-gtm-engine",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit?usp=drivesdk",
+          "mode": "list",
+          "value": "YOUR_SPREADSHEET_ID"
+        },
+        "operation": "update",
+        "options": {
+          "cellFormat": "RAW"
+        },
+        "sheetName": {
+          "__rl": true,
+          "cachedResultName": "accounts",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit#gid=17930613",
+          "mode": "list",
+          "value": 17930613
+        }
+      },
+      "credentials": {
+        "googleApi": {
+          "name": "Google Service Account account"
+        }
+      }
     }
   ],
-  "pinData": {},
   "connections": {
     "Manual Trigger": {
       "main": [
@@ -450,6 +626,11 @@
         [
           {
             "node": "Map Clay Export",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Read Accounts",
             "type": "main",
             "index": 0
           }
@@ -488,6 +669,39 @@
           }
         ]
       ]
+    },
+    "Read Accounts": {
+      "main": [
+        [
+          {
+            "node": "Map Triggers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map Triggers": {
+      "main": [
+        [
+          {
+            "node": "Only Trigger Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Only Trigger Rows": {
+      "main": [
+        [
+          {
+            "node": "Update Account Triggers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
@@ -501,5 +715,6 @@
     "builderVariant": "mcp"
   },
   "tags": [],
-  "nodeGroups": []
+  "nodeGroups": [],
+  "pinData": {}
 }

@@ -1,0 +1,62 @@
+{
+  "name": "GTM Engine: Error Alerts",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "a25ff013-ed34-4716-9bd1-848c05d2bbb9",
+      "name": "Error Trigger"
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "=Workflow failed: {{ $json.workflow.name }}\nLast node: {{ $json.execution.lastNodeExecuted }}\nError: {{ $json.execution.error.message }}\nRun: {{ $json.execution.url }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ],
+      "id": "a890f516-2e0e-421b-92ce-6d941b4285b7",
+      "name": "Discord",
+      "webhookId": "60ff45a5-e395-4214-9d59-9134fd77eeae",
+      "credentials": {
+        "discordWebhookApi": {
+          "name": "Personal GTM Engine Discord Webhook"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": [],
+  "nodeGroups": [],
+  "pinData": {}
+}

@@ -72,6 +72,14 @@ Consolidated from every ADR in the project docs (SPEC, Roadmap, Sprint 1 to 7 gu
 | ADR-079 | Public repo with sanitized exports | Accepted |
 | ADR-080 | Recorded walkthrough instead of a hosted demo | Accepted |
 | ADR-081 | Sending stays manual during dogfooding | Accepted |
+| ADR-082 | Retire the Discord digest; the console is the only review surface | Accepted |
+| ADR-083 | Neon is the permanent system of record for outreach | Accepted |
+| ADR-084 | Archive before delete | Accepted |
+| ADR-085 | Hide Sheet columns, never delete them | Accepted |
+| ADR-086 | Keep Sheets as the engine's working store, bridged to Neon | Accepted |
+| ADR-087 | Workflow boundaries follow human steps and credit gates | Accepted |
+| ADR-088 | Keep the `config` mirror tab and its push | Accepted |
+| ADR-089 | Clay on the Free plan: two tables, unused columns removed, auto-run off | Accepted |
 
 ---
 
@@ -534,8 +542,64 @@ Consolidated from every ADR in the project docs (SPEC, Roadmap, Sprint 1 to 7 gu
 **Status:** Accepted
 **Context:** Free LinkedIn accounts allow only a few personalized connection notes per month, and automated LinkedIn activity breaks LinkedIn's terms (SPEC non-goal).
 **Decision:** Send approved drafts by hand, record `send_status`, `sent_at` and `reply_received` in the sheet, and measure reply rate weekly.
-**Trade-offs / consequences:** Volume stays low (about 10 to 20 touches a week). Each touch is reviewed and personal, which is the point of the engine.
+**Trade-offs / consequences:** Volume stays low (about 10 to 20 touches a week). Each touch is reviewed and personal, which is the point of the engine. Superseded in part by ADR-083: sent status is recorded in the console with **Mark sent**.
 **Source:** claude/Sprint 8 - Portfolio Packaging Guide.md
+
+## ADR-082: Retire the Discord digest; the console is the only review surface
+**Status:** Accepted
+**Context:** The digest ran 7 times, all by hand; its 08:00 schedule never fired because n8n is off at that hour. Since the console went live it has handled every review, and its draft view shows every field of the Discord card.
+**Decision:** Archive `Personal GTM Digest`, delete its `digest_log` Data Table and `digest_ops` tab, and remove the Digest tab and switch from the console. Keep Discord only for `GTM Engine: Error Alerts`.
+**Trade-offs / consequences:** No push ping when new drafts land. Engine runs are started by hand, so the person running them already knows when to open the console. Neon keeps the frozen `digest_ops` table because `gtm_sync_pull()` declares a variable of its row type.
+**Source:** claude/Sprint 12 - Clean-up and Packaging Guide.md (originally numbered ADR-S12-1 in that doc)
+
+## ADR-083: Neon is the permanent system of record for outreach
+**Status:** Accepted
+**Context:** Since Phase 4b (`outreach_sor = neon`) drafts are written to Neon. The Sheet `outreach_queue` tab was 14 drafts behind, and the sync read it only to throw the data away.
+**Decision:** Delete the Sheet `outreach_queue` tab and its sync reads. Neon `outreach_queue` is the only copy; approvals, edits and **Mark sent** happen in the console.
+**Trade-offs / consequences:** Rolling back to `outreach_sor = sheets` now needs the tab restored from the archive copy of the Sheet.
+**Source:** claude/Sprint 12 - Clean-up and Packaging Guide.md (originally numbered ADR-S12-2 in that doc)
+
+## ADR-084: Archive before delete
+**Status:** Accepted
+**Context:** The clean-up removed tabs, workflows, a Data Table and Clay columns from a system in daily use.
+**Decision:** Before any removal: a full copy of the Sheet, a Neon branch (`pre-s12`), JSON exports of every workflow, n8n archive instead of delete, and Clay CSV exports.
+**Trade-offs / consequences:** About 10 minutes of backups. Every step can be undone.
+**Source:** claude/Sprint 12 - Clean-up and Packaging Guide.md (originally numbered ADR-S12-3 in that doc)
+
+## ADR-085: Hide Sheet columns, never delete them
+**Status:** Accepted
+**Context:** Some Sheet columns look unused, but every append node uses Map Automatically, whose default re-creates a missing column on the next run. `Pack Sync Payload` also maps every `accounts` and `contacts` column into Neon, and the console shows them.
+**Decision:** Delete no columns. Hide them if a tab is too wide; the Sheets API still returns hidden columns to n8n.
+**Trade-offs / consequences:** Tabs stay wide. The gain from deleting would be close to zero at 6 to 67 rows per tab.
+**Source:** claude/Sprint 12 - Clean-up and Packaging Guide.md (originally numbered ADR-S12-4 in that doc)
+
+## ADR-086: Keep Sheets as the engine's working store, bridged to Neon
+**Status:** Accepted
+**Context:** Two stores (Sheets for the engine, Neon for the console) is the strangler pattern from Sprint 10, half finished. Finishing it means swapping about 20 Sheets nodes in 6 workflows, and Clay reads its two queues from Sheets.
+**Decision:** Keep `GTM Neon Sync` (every 15 minutes) and migrate accounts and contacts once, to the final target, after the CRM decision (HubSpot may become the system of record for companies and contacts).
+**Trade-offs / consequences:** Two stores, and up to a 15-minute lag on account and contact data in the console.
+**Source:** claude/Sprint 12 - Clean-up and Packaging Guide.md (originally numbered ADR-S12-5 in that doc)
+
+## ADR-087: Workflow boundaries follow human steps and credit gates
+**Status:** Accepted
+**Context:** Eleven workflows looked like too many. Most sit on a real boundary: a human step (Contact Finder results, Clay runs, CSV exports), a paid-credit gate (Tavily, Clay) or an external tool.
+**Decision:** Merge only workflows with the same trigger and the same input: `Clay Trigger Import` went into `GTM Clay Bridge` (both read `clay_export_accounts`). Keep the Clay email queue and import apart (a Clay run happens between them) and keep the Contact Finder apart from the Engine (manual Tavily spend gate). Group workflows in n8n folders.
+**Trade-offs / consequences:** 8 workflows instead of 5 or 6. Each one is a place to inspect results and stop spend.
+**Source:** claude/Sprint 12 - Clean-up and Packaging Guide.md (originally numbered ADR-S12-6 in that doc)
+
+## ADR-088: Keep the `config` mirror tab and its push
+**Status:** Accepted
+**Context:** Config is owned by the console in Neon (`config_versions`). The Sheet `config` tab is a mirror.
+**Decision:** Keep the tab and the sync's config push.
+**Trade-offs / consequences:** One extra tab. Dropping it would leave `v_sync_health.pending_push` uncleared without a schema change.
+**Source:** claude/Sprint 12 - Clean-up and Packaging Guide.md (originally numbered ADR-S12-7 in that doc)
+
+## ADR-089: Clay on the Free plan: two tables, unused columns removed, auto-run off
+**Status:** Accepted
+**Context:** After the trial, the Clay Free plan allows 100 Data Credits and 500 Actions a month and 200 rows per table. A source refresh with auto-run on could run enrichments on new rows by itself.
+**Decision:** Keep only `Accounts v2` and `Contacts Email`, delete the unused columns (`people_fallback`, `Find people at company`, `signal_ok`) and working views, switch auto-run off on both tables, and run enrichments by selection with `Clay Meter` before and after.
+**Trade-offs / consequences:** Every Clay run is a deliberate click. None otherwise.
+**Source:** claude/Sprint 12 - Clean-up and Packaging Guide.md (originally numbered ADR-S12-8 in that doc)
 
 ---
 

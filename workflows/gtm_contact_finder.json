@@ -17,39 +17,6 @@
         "authentication": "serviceAccount",
         "documentId": {
           "__rl": true,
-          "value": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit?usp=sharing",
-          "mode": "url"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": "gid=0",
-          "mode": "list",
-          "cachedResultName": "config",
-          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit#gid=0"
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.7,
-      "position": [
-        928,
-        -208
-      ],
-      "id": "0efc5ffc-898a-4389-9c94-f97dc2cd4203",
-      "name": "Fetch Config",
-      "executeOnce": true,
-      "alwaysOutputData": true,
-      "credentials": {
-        "googleApi": {
-          "name": "Google Service Account account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "authentication": "serviceAccount",
-        "documentId": {
-          "__rl": true,
           "value": "YOUR_SPREADSHEET_ID",
           "mode": "list",
           "cachedResultName": "personal-gtm-engine",
@@ -192,12 +159,12 @@
       "retryOnFail": true,
       "maxTries": 2,
       "waitBetweenTries": 3000,
+      "onError": "continueRegularOutput",
       "credentials": {
         "httpHeaderAuth": {
           "name": "Tavily Header Auth"
         }
-      },
-      "onError": "continueRegularOutput"
+      }
     },
     {
       "parameters": {
@@ -459,32 +426,31 @@
       ],
       "id": "11e6d376-177d-4d20-9a2f-7971449b6b81",
       "name": "YC Rows"
+    },
+    {
+      "id": "03913683-c9a5-4c6a-bb95-c5f4dd7203d7",
+      "name": "Fetch Config",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        928,
+        -208
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "select * from n8n_config_sheet;"
+      },
+      "alwaysOutputData": true,
+      "executeOnce": true,
+      "credentials": {
+        "postgres": {
+          "name": "Neon GTM"
+        }
+      }
     }
   ],
-  "pinData": {},
   "connections": {
-    "Manual Trigger": {
-      "main": [
-        [
-          {
-            "node": "Fetch Config",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Fetch Config": {
-      "main": [
-        [
-          {
-            "node": "Fetch Contacts Queue",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Fetch Contacts Queue": {
       "main": [
         [
@@ -599,14 +565,41 @@
           }
         ]
       ]
+    },
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Config": {
+      "main": [
+        [
+          {
+            "node": "Fetch Contacts Queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
   "settings": {
     "executionOrder": "v1",
-    "binaryMode": "separate"
+    "binaryMode": "separate",
+    "availableInMCP": true
   },
-  "meta": {},
+  "meta": {
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp"
+  },
+  "tags": [],
   "nodeGroups": [],
-  "tags": []
+  "pinData": {}
 }

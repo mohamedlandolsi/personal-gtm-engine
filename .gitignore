@@ -14,3 +14,7 @@ exports/
 n8n_data/
 .DS_Store
 __pycache__/
+
+# local agent state
+.claude/worktrees/
+.claude/settings.local.json

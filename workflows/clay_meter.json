@@ -19,13 +19,13 @@
             {
               "id": "label",
               "name": "label",
-              "value": "before",
+              "value": "after",
               "type": "string"
             },
             {
               "id": "module",
               "name": "module",
-              "value": "C2-batch",
+              "value": "S12-clean",
               "type": "string"
             }
           ]
@@ -61,12 +61,12 @@
       "retryOnFail": true,
       "maxTries": 2,
       "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput",
       "credentials": {
         "httpHeaderAuth": {
           "name": "Clay API Key"
         }
-      },
-      "onError": "continueRegularOutput"
+      }
     },
     {
       "parameters": {
@@ -219,7 +219,6 @@
       }
     }
   ],
-  "pinData": {},
   "connections": {
     "Manual Trigger": {
       "main": [
@@ -277,5 +276,6 @@
     "builderVariant": "mcp"
   },
   "tags": [],
-  "nodeGroups": []
+  "nodeGroups": [],
+  "pinData": {}
 }

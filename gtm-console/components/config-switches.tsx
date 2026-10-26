@@ -21,7 +21,6 @@ import { Switch } from "@/components/ui/switch";
 const TOGGLES = [
   { path: "enabled", label: "Engine", hint: "Master switch for every engine run" },
   { path: "outreach.enabled", label: "Outreach drafting", hint: "Writes new drafts for review" },
-  { path: "digest.enabled", label: "Digest", hint: "Posts the Discord digest" },
 ] as const;
 
 const CAP_PATH = "outreach.max_per_day";

@@ -606,7 +606,6 @@
       }
     }
   ],
-  "pinData": {},
   "connections": {
     "Manual Trigger": {
       "main": [
@@ -691,5 +690,6 @@
     "builderVariant": "mcp"
   },
   "tags": [],
-  "nodeGroups": []
+  "nodeGroups": [],
+  "pinData": {}
 }
