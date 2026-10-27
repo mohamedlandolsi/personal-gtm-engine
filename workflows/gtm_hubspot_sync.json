@@ -1,0 +1,1377 @@
+{
+  "name": "GTM HubSpot Sync",
+  "description": "Sprint 13: Neon outbox -> HubSpot (companies, contacts, deals, notes, tasks, stage), then pulls deal stages back. Every 30 min. Kill switch: config hubspot.enabled.",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "74411cdd-e027-4a9c-9481-7ed64a865a67",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select * from v_hubspot_config;",
+        "options": {}
+      },
+      "id": "37be7522-374a-4a62-b08f-a9088e0307d5",
+      "name": "Read HubSpot Config",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        224,
+        304
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "postgres": {
+          "name": "Neon GTM"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      },
+      "id": "592b07e4-64f9-48d9-ad11-fc3b42433d9b",
+      "name": "Every 30 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.enabled }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              },
+              "id": "1870ebf1-d179-430e-b3a3-68c314dda9d7"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "0941ead9-efbe-451d-8e2f-f75ecd98e5c2",
+      "name": "HubSpot Enabled",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        448,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select * from v_hubspot_outbox where step = 1 order by local_id limit $1;",
+        "options": {
+          "queryReplacement": "={{ [ $('Read HubSpot Config').first().json.max_per_run ] }}"
+        }
+      },
+      "id": "20329c7d-af50-42a0-8a79-571451c83818",
+      "name": "Read Outbox 1 Companies",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        672,
+        0
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "postgres": {
+          "name": "Neon GTM"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "I4etZGppBTYQqeJp"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "link_type": "={{ $json.link_type }}",
+            "object": "={{ $json.object }}",
+            "local_id": "={{ $json.local_id }}",
+            "hubspot_id": "={{ $json.hubspot_id }}",
+            "key_property": "={{ $json.key_property }}",
+            "key_value": "={{ $json.key_value }}",
+            "properties": "={{ $json.properties }}",
+            "associations": "={{ $json.associations }}",
+            "properties_hash": "={{ $json.properties_hash }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "link_type",
+              "displayName": "link_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "object",
+              "displayName": "object",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "local_id",
+              "displayName": "local_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "hubspot_id",
+              "displayName": "hubspot_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "key_property",
+              "displayName": "key_property",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "key_value",
+              "displayName": "key_value",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "properties",
+              "displayName": "properties",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object"
+            },
+            {
+              "id": "associations",
+              "displayName": "associations",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "array"
+            },
+            {
+              "id": "properties_hash",
+              "displayName": "properties_hash",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "a5ba5e0c-2d94-4de4-9c3c-38b6498579e2",
+      "name": "Push Companies",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        880,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select gtm_hubspot_record($1::jsonb) as r;",
+        "options": {
+          "queryBatching": "independently",
+          "queryReplacement": "={{ [ JSON.stringify({ ...$json, run_id: $execution.id }) ] }}"
+        }
+      },
+      "id": "90ac5f6e-9323-42aa-9399-1c166a0ea62f",
+      "name": "Save Companies",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        1104,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "name": "Neon GTM"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select * from v_hubspot_outbox where step = 2 order by local_id limit $1;",
+        "options": {
+          "queryReplacement": "={{ [ $('Read HubSpot Config').first().json.max_per_run ] }}"
+        }
+      },
+      "id": "4fd6434e-1f01-4fc7-903a-655b0a8e0838",
+      "name": "Read Outbox 2 Contacts",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        672,
+        208
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "postgres": {
+          "name": "Neon GTM"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "I4etZGppBTYQqeJp"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "link_type": "={{ $json.link_type }}",
+            "object": "={{ $json.object }}",
+            "local_id": "={{ $json.local_id }}",
+            "hubspot_id": "={{ $json.hubspot_id }}",
+            "key_property": "={{ $json.key_property }}",
+            "key_value": "={{ $json.key_value }}",
+            "properties": "={{ $json.properties }}",
+            "associations": "={{ $json.associations }}",
+            "properties_hash": "={{ $json.properties_hash }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "link_type",
+              "displayName": "link_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "object",
+              "displayName": "object",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "local_id",
+              "displayName": "local_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "hubspot_id",
+              "displayName": "hubspot_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "key_property",
+              "displayName": "key_property",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "key_value",
+              "displayName": "key_value",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "properties",
+              "displayName": "properties",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object"
+            },
+            {
+              "id": "associations",
+              "displayName": "associations",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "array"
+            },
+            {
+              "id": "properties_hash",
+              "displayName": "properties_hash",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "b1624d62-e342-49a6-b63a-888abd3ecdb9",
+      "name": "Push Contacts",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        880,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select gtm_hubspot_record($1::jsonb) as r;",
+        "options": {
+          "queryBatching": "independently",
+          "queryReplacement": "={{ [ JSON.stringify({ ...$json, run_id: $execution.id }) ] }}"
+        }
+      },
+      "id": "9c3161a2-c40e-4e9c-8736-c98635c7278b",
+      "name": "Save Contacts",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        1104,
+        208
+      ],
+      "credentials": {
+        "postgres": {
+          "name": "Neon GTM"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select * from v_hubspot_outbox where step = 3 order by local_id limit $1;",
+        "options": {
+          "queryReplacement": "={{ [ $('Read HubSpot Config').first().json.max_per_run ] }}"
+        }
+      },
+      "id": "267aa334-8b6c-4ac8-ad35-f2ed511f87ce",
+      "name": "Read Outbox 3 Deals",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        672,
+        400
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "postgres": {
+          "name": "Neon GTM"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "I4etZGppBTYQqeJp"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "link_type": "={{ $json.link_type }}",
+            "object": "={{ $json.object }}",
+            "local_id": "={{ $json.local_id }}",
+            "hubspot_id": "={{ $json.hubspot_id }}",
+            "key_property": "={{ $json.key_property }}",
+            "key_value": "={{ $json.key_value }}",
+            "properties": "={{ $json.properties }}",
+            "associations": "={{ $json.associations }}",
+            "properties_hash": "={{ $json.properties_hash }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "link_type",
+              "displayName": "link_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "object",
+              "displayName": "object",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "local_id",
+              "displayName": "local_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "hubspot_id",
+              "displayName": "hubspot_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "key_property",
+              "displayName": "key_property",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "key_value",
+              "displayName": "key_value",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "properties",
+              "displayName": "properties",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object"
+            },
+            {
+              "id": "associations",
+              "displayName": "associations",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "array"
+            },
+            {
+              "id": "properties_hash",
+              "displayName": "properties_hash",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "89398b87-8ee9-479f-be7f-60ab3e974a64",
+      "name": "Push Deals",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        880,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select gtm_hubspot_record($1::jsonb) as r;",
+        "options": {
+          "queryBatching": "independently",
+          "queryReplacement": "={{ [ JSON.stringify({ ...$json, run_id: $execution.id }) ] }}"
+        }
+      },
+      "id": "3e0d661c-3bde-4c17-b22c-c73d61e5d766",
+      "name": "Save Deals",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        1104,
+        400
+      ],
+      "credentials": {
+        "postgres": {
+          "name": "Neon GTM"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select * from v_hubspot_outbox where step = 4 order by local_id limit $1;",
+        "options": {
+          "queryReplacement": "={{ [ $('Read HubSpot Config').first().json.max_per_run ] }}"
+        }
+      },
+      "id": "84e35030-367a-4bc7-8dab-33cacb7d6e84",
+      "name": "Read Outbox 4 Notes",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        672,
+        608
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "postgres": {
+          "name": "Neon GTM"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "I4etZGppBTYQqeJp"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "link_type": "={{ $json.link_type }}",
+            "object": "={{ $json.object }}",
+            "local_id": "={{ $json.local_id }}",
+            "hubspot_id": "={{ $json.hubspot_id }}",
+            "key_property": "={{ $json.key_property }}",
+            "key_value": "={{ $json.key_value }}",
+            "properties": "={{ $json.properties }}",
+            "associations": "={{ $json.associations }}",
+            "properties_hash": "={{ $json.properties_hash }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "link_type",
+              "displayName": "link_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "object",
+              "displayName": "object",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "local_id",
+              "displayName": "local_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "hubspot_id",
+              "displayName": "hubspot_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "key_property",
+              "displayName": "key_property",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "key_value",
+              "displayName": "key_value",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "properties",
+              "displayName": "properties",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object"
+            },
+            {
+              "id": "associations",
+              "displayName": "associations",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "array"
+            },
+            {
+              "id": "properties_hash",
+              "displayName": "properties_hash",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "f1da90db-dc2b-4325-a90e-5b4598afff57",
+      "name": "Push Notes",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        880,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select gtm_hubspot_record($1::jsonb) as r;",
+        "options": {
+          "queryBatching": "independently",
+          "queryReplacement": "={{ [ JSON.stringify({ ...$json, run_id: $execution.id }) ] }}"
+        }
+      },
+      "id": "f0032ed4-9c6f-497c-b5d3-63ad5e4024bc",
+      "name": "Save Notes",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        1104,
+        608
+      ],
+      "credentials": {
+        "postgres": {
+          "name": "Neon GTM"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select * from v_hubspot_outbox where step = 5 order by local_id limit $1;",
+        "options": {
+          "queryReplacement": "={{ [ $('Read HubSpot Config').first().json.max_per_run ] }}"
+        }
+      },
+      "id": "b5d6a32e-4376-4712-ac46-96b023e3ed3a",
+      "name": "Read Outbox 5 Tasks",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        672,
+        800
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "postgres": {
+          "name": "Neon GTM"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "I4etZGppBTYQqeJp"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "link_type": "={{ $json.link_type }}",
+            "object": "={{ $json.object }}",
+            "local_id": "={{ $json.local_id }}",
+            "hubspot_id": "={{ $json.hubspot_id }}",
+            "key_property": "={{ $json.key_property }}",
+            "key_value": "={{ $json.key_value }}",
+            "properties": "={{ $json.properties }}",
+            "associations": "={{ $json.associations }}",
+            "properties_hash": "={{ $json.properties_hash }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "link_type",
+              "displayName": "link_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "object",
+              "displayName": "object",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "local_id",
+              "displayName": "local_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "hubspot_id",
+              "displayName": "hubspot_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "key_property",
+              "displayName": "key_property",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "key_value",
+              "displayName": "key_value",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "properties",
+              "displayName": "properties",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object"
+            },
+            {
+              "id": "associations",
+              "displayName": "associations",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "array"
+            },
+            {
+              "id": "properties_hash",
+              "displayName": "properties_hash",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "439920b6-fbc8-4c82-810b-54d069f2dd95",
+      "name": "Push Tasks",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        880,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select gtm_hubspot_record($1::jsonb) as r;",
+        "options": {
+          "queryBatching": "independently",
+          "queryReplacement": "={{ [ JSON.stringify({ ...$json, run_id: $execution.id }) ] }}"
+        }
+      },
+      "id": "be6d3a76-0a36-41df-84d6-daaf9ced87e7",
+      "name": "Save Tasks",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        1104,
+        800
+      ],
+      "credentials": {
+        "postgres": {
+          "name": "Neon GTM"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select * from v_hubspot_outbox where step = 6 order by local_id limit $1;",
+        "options": {
+          "queryReplacement": "={{ [ $('Read HubSpot Config').first().json.max_per_run ] }}"
+        }
+      },
+      "id": "02dc123f-1b78-4df4-8003-d8ea354e081b",
+      "name": "Read Outbox 6 Stage Moves",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        672,
+        1008
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "postgres": {
+          "name": "Neon GTM"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "I4etZGppBTYQqeJp"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "link_type": "={{ $json.link_type }}",
+            "object": "={{ $json.object }}",
+            "local_id": "={{ $json.local_id }}",
+            "hubspot_id": "={{ $json.hubspot_id }}",
+            "key_property": "={{ $json.key_property }}",
+            "key_value": "={{ $json.key_value }}",
+            "properties": "={{ $json.properties }}",
+            "associations": "={{ $json.associations }}",
+            "properties_hash": "={{ $json.properties_hash }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "link_type",
+              "displayName": "link_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "object",
+              "displayName": "object",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "local_id",
+              "displayName": "local_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "hubspot_id",
+              "displayName": "hubspot_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "key_property",
+              "displayName": "key_property",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "key_value",
+              "displayName": "key_value",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "properties",
+              "displayName": "properties",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "object"
+            },
+            {
+              "id": "associations",
+              "displayName": "associations",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "array"
+            },
+            {
+              "id": "properties_hash",
+              "displayName": "properties_hash",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "305b4bbf-46b7-4ff1-beab-18d2e8742748",
+      "name": "Push Stage Moves",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        880,
+        1008
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select gtm_hubspot_record($1::jsonb) as r;",
+        "options": {
+          "queryBatching": "independently",
+          "queryReplacement": "={{ [ JSON.stringify({ ...$json, run_id: $execution.id }) ] }}"
+        }
+      },
+      "id": "9bd50b3a-7f6f-4995-99cf-a40780c4849e",
+      "name": "Save Stage Moves",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        1104,
+        1008
+      ],
+      "credentials": {
+        "postgres": {
+          "name": "Neon GTM"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.hubapi.com/crm/objects/2026-09/deals/search",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ filterGroups: [{ filters: [ { propertyName: 'hs_lastmodifieddate', operator: 'GTE', value: $('Read HubSpot Config').first().json.stage_pull_since_ms }, { propertyName: 'pipeline', operator: 'EQ', value: $('Read HubSpot Config').first().json.pipeline_id } ] }], properties: ['dealstage', 'dealname'], limit: 100 }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "d582c89e-0e1b-483a-872e-9c223cb83027",
+      "name": "Search Changed Deals",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        672,
+        1200
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "hubspotAppToken": {
+          "name": "HubSpot Service Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select gtm_hubspot_pull_stages($1::jsonb) as r;",
+        "options": {
+          "queryReplacement": "={{ [ JSON.stringify({ run_id: $execution.id, results: $json.results || [] }) ] }}"
+        }
+      },
+      "id": "ba26c289-17f8-404f-9b4f-06ceda9d7189",
+      "name": "Save Deal Stages",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        880,
+        1200
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "postgres": {
+          "name": "Neon GTM"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read HubSpot Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read HubSpot Config": {
+      "main": [
+        [
+          {
+            "node": "HubSpot Enabled",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every 30 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Read HubSpot Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot Enabled": {
+      "main": [
+        [
+          {
+            "node": "Read Outbox 1 Companies",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Read Outbox 2 Contacts",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Read Outbox 3 Deals",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Read Outbox 4 Notes",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Read Outbox 5 Tasks",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Read Outbox 6 Stage Moves",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Search Changed Deals",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Outbox 1 Companies": {
+      "main": [
+        [
+          {
+            "node": "Push Companies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Push Companies": {
+      "main": [
+        [
+          {
+            "node": "Save Companies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Outbox 2 Contacts": {
+      "main": [
+        [
+          {
+            "node": "Push Contacts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Push Contacts": {
+      "main": [
+        [
+          {
+            "node": "Save Contacts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Outbox 3 Deals": {
+      "main": [
+        [
+          {
+            "node": "Push Deals",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Push Deals": {
+      "main": [
+        [
+          {
+            "node": "Save Deals",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Outbox 4 Notes": {
+      "main": [
+        [
+          {
+            "node": "Push Notes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Push Notes": {
+      "main": [
+        [
+          {
+            "node": "Save Notes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Outbox 5 Tasks": {
+      "main": [
+        [
+          {
+            "node": "Push Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Push Tasks": {
+      "main": [
+        [
+          {
+            "node": "Save Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Outbox 6 Stage Moves": {
+      "main": [
+        [
+          {
+            "node": "Push Stage Moves",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Push Stage Moves": {
+      "main": [
+        [
+          {
+            "node": "Save Stage Moves",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Changed Deals": {
+      "main": [
+        [
+          {
+            "node": "Save Deal Stages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true,
+    "timezone": "Africa/Tunis",
+    "binaryMode": "separate"
+  },
+  "meta": {
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp"
+  },
+  "tags": [],
+  "nodeGroups": [],
+  "pinData": {}
+}

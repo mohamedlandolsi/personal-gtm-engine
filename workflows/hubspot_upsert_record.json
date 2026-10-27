@@ -1,0 +1,577 @@
+{
+  "name": "HubSpot Upsert Record",
+  "description": "Sprint 13 sub-workflow: one HubSpot write per call. Update by id, else search natural key and adopt, else create with associations. Returns ok/action/hubspot_id/error.",
+  "nodes": [
+    {
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "link_type"
+            },
+            {
+              "name": "object"
+            },
+            {
+              "name": "local_id"
+            },
+            {
+              "name": "hubspot_id"
+            },
+            {
+              "name": "key_property"
+            },
+            {
+              "name": "key_value"
+            },
+            {
+              "name": "properties",
+              "type": "object"
+            },
+            {
+              "name": "associations",
+              "type": "array"
+            },
+            {
+              "name": "properties_hash"
+            }
+          ]
+        }
+      },
+      "id": "07688694-683f-4e6e-88e0-b51ed736be25",
+      "name": "Start",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.hubspot_id }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              },
+              "id": "4c6020b3-e226-4fe8-8948-e2d51e6ab774"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "1e952635-02e0-4412-833a-38e467a196d1",
+      "name": "Has HubSpot ID",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        224,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://api.hubapi.com/crm/objects/2026-09/{{ $('Start').item.json.object }}/{{ $('Start').item.json.hubspot_id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ properties: $('Start').item.json.properties }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "6c394c2f-7b60-47cd-a77f-cb976c24d24f",
+      "name": "Update By ID",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1120,
+        144
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "hubspotAppToken": {
+          "name": "HubSpot Service Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.key_value }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "858d70be-9877-426a-bb14-badfe00d27e9",
+      "name": "Has Search Key",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        448,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.hubapi.com/crm/objects/2026-09/{{ $('Start').item.json.object }}/search",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ filterGroups: [{ filters: [{ propertyName: $('Start').item.json.key_property, operator: 'EQ', value: $('Start').item.json.key_value }] }], properties: ['hs_object_id'], limit: 1 }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "24390aa7-9a19-4370-8368-9dda0039a875",
+      "name": "Search By Key",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        672,
+        560
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "hubspotAppToken": {
+          "name": "HubSpot Service Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.hubapi.com/crm/objects/2026-09/{{ $('Start').item.json.object }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ properties: $('Start').item.json.properties, associations: $('Start').item.json.associations }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "00872594-8a1f-42e0-a809-e7da2ebcb0c0",
+      "name": "Create Record",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1120,
+        576
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "hubspotAppToken": {
+          "name": "HubSpot Service Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.total }}",
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              },
+              "rightValue": 0
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "65d5ae3a-59f7-40d7-904d-d24cafc1ab1e",
+      "name": "Found Existing",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        896,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://api.hubapi.com/crm/objects/2026-09/{{ $('Start').item.json.object }}/{{ $json.results[0].id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ properties: $('Start').item.json.properties }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "dc895381-df59-420b-b7e6-3044a7970179",
+      "name": "Update Found",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1120,
+        384
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "hubspotAppToken": {
+          "name": "HubSpot Service Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "lt",
+              "name": "link_type",
+              "value": "={{ $('Start').item.json.link_type }}",
+              "type": "string"
+            },
+            {
+              "id": "li",
+              "name": "local_id",
+              "value": "={{ $('Start').item.json.local_id }}",
+              "type": "string"
+            },
+            {
+              "id": "ph",
+              "name": "properties_hash",
+              "value": "={{ $('Start').item.json.properties_hash }}",
+              "type": "string"
+            },
+            {
+              "id": "ok",
+              "name": "ok",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "ac",
+              "name": "action",
+              "value": "={{ ({ 'Update By ID': 'updated', 'Update Found': 'adopted', 'Create Record': 'created' })[$prevNode.name] }}",
+              "type": "string"
+            },
+            {
+              "id": "hi",
+              "name": "hubspot_id",
+              "value": "={{ $json.id }}",
+              "type": "string"
+            },
+            {
+              "id": "er",
+              "name": "error",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a61b4732-2f73-4663-9be8-715392279e3f",
+      "name": "Shape Result",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1344,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "lt",
+              "name": "link_type",
+              "value": "={{ $('Start').item.json.link_type }}",
+              "type": "string"
+            },
+            {
+              "id": "li",
+              "name": "local_id",
+              "value": "={{ $('Start').item.json.local_id }}",
+              "type": "string"
+            },
+            {
+              "id": "ph",
+              "name": "properties_hash",
+              "value": "={{ $('Start').item.json.properties_hash }}",
+              "type": "string"
+            },
+            {
+              "id": "ok",
+              "name": "ok",
+              "value": false,
+              "type": "boolean"
+            },
+            {
+              "id": "ac",
+              "name": "action",
+              "value": "failed",
+              "type": "string"
+            },
+            {
+              "id": "hi",
+              "name": "hubspot_id",
+              "value": "={{ $('Start').item.json.hubspot_id }}",
+              "type": "string"
+            },
+            {
+              "id": "er",
+              "name": "error",
+              "value": "={{ ($prevNode.name + ': ' + ($json.error?.description || $json.error?.message || JSON.stringify($json))).slice(0, 500) }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6f3c953f-bacb-453e-b839-06c23df2d184",
+      "name": "Shape Error",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1344,
+        528
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "5e659689-e78c-498d-adc8-406c851fcc4a",
+      "name": "Return",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1568,
+        432
+      ]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Has HubSpot ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has HubSpot ID": {
+      "main": [
+        [
+          {
+            "node": "Update By ID",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Has Search Key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update By ID": {
+      "main": [
+        [
+          {
+            "node": "Shape Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Shape Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Search Key": {
+      "main": [
+        [
+          {
+            "node": "Search By Key",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search By Key": {
+      "main": [
+        [
+          {
+            "node": "Found Existing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Shape Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Record": {
+      "main": [
+        [
+          {
+            "node": "Shape Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Shape Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Found Existing": {
+      "main": [
+        [
+          {
+            "node": "Update Found",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Create Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Found": {
+      "main": [
+        [
+          {
+            "node": "Shape Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Shape Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Result": {
+      "main": [
+        [
+          {
+            "node": "Return",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Error": {
+      "main": [
+        [
+          {
+            "node": "Return",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true,
+    "timezone": "Africa/Tunis",
+    "callerPolicy": "workflowsFromSameOwner",
+    "binaryMode": "separate"
+  },
+  "meta": {
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp"
+  },
+  "tags": [],
+  "nodeGroups": [],
+  "pinData": {}
+}

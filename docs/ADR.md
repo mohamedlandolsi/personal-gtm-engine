@@ -80,6 +80,19 @@ Consolidated from every ADR in the project docs (SPEC, Roadmap, Sprint 1 to 7 gu
 | ADR-087 | Workflow boundaries follow human steps and credit gates | Accepted |
 | ADR-088 | Keep the `config` mirror tab and its push | Accepted |
 | ADR-089 | Clay on the Free plan: two tables, unused columns removed, auto-run off | Accepted |
+| ADR-090 | HubSpot holds only human-approved accounts; Neon stays the system of record | Accepted |
+| ADR-091 | Service Key for HubSpot auth | Accepted |
+| ADR-092 | HTTP Request on date-versioned HubSpot endpoints, not the native node | Accepted |
+| ADR-093 | Transactional outbox in Neon, n8n as transport | Accepted |
+| ADR-094 | HubSpot idempotency: link table, natural-key search, unique account key | Accepted |
+| ADR-095 | Ownership split between the engine and HubSpot | Accepted |
+| ADR-096 | Poll HubSpot every 30 minutes | Accepted |
+| ADR-097 | Four custom HubSpot properties, built-in LinkedIn field | Accepted |
+| ADR-098 | Single writer for engine data in HubSpot | Accepted |
+| ADR-099 | Reply tracking by moving the deal stage | Accepted |
+| ADR-100 | Quarantine a HubSpot row after 3 failures | Accepted |
+| ADR-101 | The Claude HubSpot connector is the operator layer | Accepted |
+| ADR-102 | Send a GDPR legal basis on every HubSpot contact | Accepted |
 
 ---
 
@@ -600,6 +613,97 @@ Consolidated from every ADR in the project docs (SPEC, Roadmap, Sprint 1 to 7 gu
 **Decision:** Keep only `Accounts v2` and `Contacts Email`, delete the unused columns (`people_fallback`, `Find people at company`, `signal_ok`) and working views, switch auto-run off on both tables, and run enrichments by selection with `Clay Meter` before and after.
 **Trade-offs / consequences:** Every Clay run is a deliberate click. None otherwise.
 **Source:** claude/Sprint 12 - Clean-up and Packaging Guide.md (originally numbered ADR-S12-8 in that doc)
+
+## ADR-090: HubSpot holds only human-approved accounts; Neon stays the system of record
+**Status:** Accepted
+**Context:** HubSpot Free has caps (1,000 contacts, search limits) and no queue or score semantics; a CRM should hold worked pipeline, not raw prospects. Alternative considered: HubSpot as the store for every account and contact.
+**Decision:** HubSpot holds only human-approved accounts. Neon stays the system of record for engine data, and the planned Sheets migration (ADR-086) targets Neon, not HubSpot.
+**Trade-offs / consequences:** Company data exists in two places. HubSpot lags Neon by up to 30 minutes, and only while n8n runs on the laptop.
+**Source:** claude/Sprint 13 - HubSpot Integration Guide.md (originally numbered ADR-S13-1 in that doc)
+
+## ADR-091: Service Key for HubSpot auth
+**Status:** Accepted
+**Context:** Legacy private apps can no longer be created on this account, and an OAuth app needs a public backend. Service Keys are HubSpot's official replacement: scoped, account-level, rotatable with a 7-day grace period. Alternatives considered: a legacy private app, an OAuth app.
+**Decision:** Authenticate with a Service Key, stored once in the n8n credential "HubSpot Service Key".
+**Trade-offs / consequences:** Service Keys are in public beta and cannot receive webhooks.
+**Source:** claude/Sprint 13 - HubSpot Integration Guide.md (originally numbered ADR-S13-2 in that doc)
+
+## ADR-092: HTTP Request on date-versioned HubSpot endpoints, not the native node
+**Status:** Accepted
+**Context:** The native HubSpot node v2.2 still returns the v1 `vid` on contact upsert, creates engagements through the v1 engagements API and gives no control over association type ids. Date-versioned endpoints carry an 18-month support promise. Alternative considered: the native HubSpot node.
+**Decision:** Use the HTTP Request node with the HubSpot credential on the `2026-09` endpoints.
+**Trade-offs / consequences:** Request bodies are written by hand as expressions. A version bump must be planned before March 2028.
+**Source:** claude/Sprint 13 - HubSpot Integration Guide.md (originally numbered ADR-S13-3 in that doc)
+
+## ADR-093: Transactional outbox in Neon, n8n as transport
+**Status:** Accepted
+**Context:** The mapping and dedupe logic has to be testable and visible in the console. Alternative considered: mapping and dedupe logic in n8n Code nodes.
+**Decision:** Neon views build the HubSpot payloads (`v_hubspot_outbox`), n8n carries them, and Neon functions record the results (`gtm_hubspot_record`, `gtm_hubspot_pull_stages`). Zero Code nodes.
+**Trade-offs / consequences:** Testable offline (29 checks), the console shows the same state, and n8n stays a dumb transport. The outbox view is the most complex piece, and mapping changes are SQL migrations.
+**Source:** claude/Sprint 13 - HubSpot Integration Guide.md (originally numbered ADR-S13-4 in that doc)
+
+## ADR-094: HubSpot idempotency: link table, natural-key search, unique account key
+**Status:** Accepted
+**Context:** Search alone is unsafe because HubSpot's search index lags writes. A unique company property costs nothing (1 of 10 unique-value properties). Alternative considered: a unique property with batch upsert as the main mechanism.
+**Decision:** The Neon link table (`hubspot_links`) comes first, natural-key search second (domain, verified email, deal name), plus a HubSpot-enforced unique `gtm_account_key` on companies, so HubSpot rejects a duplicate company instead of storing it.
+**Trade-offs / consequences:** A rejected duplicate shows as one `failed` event and is adopted on the next run. Contacts and deals still rely on the link table and search.
+**Source:** claude/Sprint 13 - HubSpot Integration Guide.md (originally numbered ADR-S13-5 in that doc)
+
+## ADR-095: Ownership split between the engine and HubSpot
+**Status:** Accepted
+**Context:** The engine knows scores and triggers; the human knows the deal. Alternatives considered: one-way full overwrite, or HubSpot owns everything.
+**Decision:** The engine owns the company and contact fields it sends and overwrites them on change. HubSpot owns the deal after creation. The sync never deletes.
+**Trade-offs / consequences:** Manual edits to engine-owned fields in HubSpot are overwritten on the next change.
+**Source:** claude/Sprint 13 - HubSpot Integration Guide.md (originally numbered ADR-S13-6 in that doc)
+
+## ADR-096: Poll HubSpot every 30 minutes
+**Status:** Accepted
+**Context:** n8n runs on the laptop, so Vercel cannot call it, and Service Keys cannot receive webhooks. Alternatives considered: HubSpot webhooks, the console calling n8n.
+**Decision:** `GTM HubSpot Sync` runs every 30 minutes, plus manual runs.
+**Trade-offs / consequences:** Up to 30 minutes of lag, and only while the laptop is on. Schedule slots missed while n8n is off are skipped; the next run catches up because the outbox is state, not events.
+**Source:** claude/Sprint 13 - HubSpot Integration Guide.md (originally numbered ADR-S13-7 in that doc)
+
+## ADR-097: Four custom HubSpot properties, built-in LinkedIn field
+**Status:** Accepted
+**Context:** The trigger is what a rep needs when the deal opens. Built-ins first; fewer synced fields means fewer things to drift. The account limit is 1,000 custom properties per object. Alternatives considered: 0 properties, a custom LinkedIn property, or also score breakdown and tech stack.
+**Decision:** 4 custom properties (`gtm_account_key`, `gtm_score`, `gtm_trigger`, `gtm_email_status`; 1 of 10 unique-value properties). `clay_trigger` maps to `gtm_trigger`. LinkedIn uses the built-in `hs_linkedin_url`.
+**Trade-offs / consequences:** Score breakdown and tech stack stay in the console.
+**Source:** claude/Sprint 13 - HubSpot Integration Guide.md (originally numbered ADR-S13-8 in that doc)
+
+## ADR-098: Single writer for engine data in HubSpot
+**Status:** Accepted
+**Context:** One writer means every engine write has a row in `hubspot_events` and a link in `hubspot_links`. Alternative considered: let Claude write records too.
+**Decision:** Only n8n creates or updates companies, contacts, deals, notes and tasks.
+**Trade-offs / consequences:** Fixes to engine data go through Neon or the engine, not chat.
+**Source:** claude/Sprint 13 - HubSpot Integration Guide.md (originally numbered ADR-S13-9 in that doc)
+
+## ADR-099: Reply tracking by moving the deal stage
+**Status:** Accepted
+**Context:** Replies arrive by LinkedIn and email alike, and no inbox access should be granted. Alternatives considered: connecting the inbox to HubSpot, email tracking.
+**Decision:** You move the deal to a reply stage in HubSpot by hand (or ask Claude, ADR-101). The stage pull marks the account's sent drafts as replied and logs a `crm_reply` row in `console_events`.
+**Trade-offs / consequences:** Depends on your discipline, and arrives up to 30 minutes late.
+**Source:** claude/Sprint 13 - HubSpot Integration Guide.md (originally numbered ADR-S13-10 in that doc)
+
+## ADR-100: Quarantine a HubSpot row after 3 failures
+**Status:** Accepted
+**Context:** A bad row must not burn calls every 30 minutes or block the others. Alternatives considered: retry forever, or stop the run.
+**Decision:** A row that failed 3 times since its last success leaves the outbox and appears in `v_hubspot_quarantine`.
+**Trade-offs / consequences:** Quarantined rows need a manual reset after the fix.
+**Source:** claude/Sprint 13 - HubSpot Integration Guide.md (originally numbered ADR-S13-11 in that doc)
+
+## ADR-101: The Claude HubSpot connector is the operator layer
+**Status:** Accepted
+**Context:** The deal stage is HubSpot-owned and a human decision, so a chat request is the same act as a drag, and the pull logs it. A chat-driven sync would be unscheduled, unrepeatable and unlogged. Alternatives considered: read only, or Claude as the sync engine.
+**Decision:** The Claude HubSpot connector reads (including SQL through `query_crm_data`), reviews, audits and drafts, can create the setup properties once, and may change one deal stage on explicit request.
+**Trade-offs / consequences:** The connector shows a confirmation table before every write, but which writes are allowed is a prompt rule (tested by T13). A stage change reaches Neon only on the next pull.
+**Source:** claude/Sprint 13 - HubSpot Integration Guide.md (originally numbered ADR-S13-12 in that doc)
+
+## ADR-102: Send a GDPR legal basis on every HubSpot contact
+**Status:** Accepted
+**Context:** The portal is on the EU data center with GDPR features on, so HubSpot rejects every contact create without `hs_legal_basis`. Cold B2B prospecting in the EU rests on legitimate interest. Alternative considered: turn off HubSpot's legal-basis requirement.
+**Decision:** The outbox view sends `hs_legal_basis` on every contact, from config key `hubspot.contact_legal_basis`, default "Legitimate interest – prospect/lead" (patch 1, `db/s13_patch1_legal_basis.sql`).
+**Trade-offs / consequences:** Every contact claims the same basis. A contact who objects must be handled in HubSpot and suppressed in the engine.
+**Source:** claude/Sprint 13 - HubSpot Integration Guide.md (originally numbered ADR-S13-13 in that doc)
 
 ---
 

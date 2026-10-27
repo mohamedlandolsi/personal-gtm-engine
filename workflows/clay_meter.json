@@ -19,13 +19,13 @@
             {
               "id": "label",
               "name": "label",
-              "value": "after",
+              "value": "check",
               "type": "string"
             },
             {
               "id": "module",
               "name": "module",
-              "value": "S12-clean",
+              "value": "S12-done",
               "type": "string"
             }
           ]

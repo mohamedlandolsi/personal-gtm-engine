@@ -11,6 +11,8 @@
   - Clay Meter: znGHQwl0706dI2ES [2 Clay]
   - GTM Neon Sync: oVuFHj1w20pt9uie [3 Ops, published, every 15 min]
   - GTM Engine: Error Alerts: CEc6gDLm2WD7mgXl [3 Ops, published, error workflow]
+  - GTM HubSpot Sync: ehIqpZl7XjfgBrCI [4 CRM, published, every 30 min]
+  - HubSpot Upsert Record: I4etZGppBTYQqeJp [4 CRM, published, sub-workflow]
 
 ## Edit protocol (always, in this order)
 1. get_workflow_details on the target workflow right before editing. Never rely on an earlier read; the user edits in the UI too.
