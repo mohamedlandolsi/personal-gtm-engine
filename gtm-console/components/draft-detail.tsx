@@ -6,7 +6,9 @@ import { requireSession } from "@/lib/session";
 import { displayState, httpUrl, timeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ChannelIcon, channelLabel } from "@/components/channel-icon";
+import { readHubspotCfg } from "@/lib/hubspot";
 import { ClayTriggerFact } from "@/components/clay-trigger";
+import { type CrmRow, CrmStatus } from "@/components/crm-status";
 import { FadeStatusChip } from "@/components/fade-status-chip";
 import { ReviewActions } from "@/components/review-actions";
 import { ScoreLedger } from "@/components/score-ledger";
@@ -51,6 +53,7 @@ type Draft = {
   clay_trigger: string | null;
   clay_trigger_source: string | null;
   clay_trigger_date: string | null;
+  account_status: string | null;
 };
 
 type Event = {
@@ -103,7 +106,7 @@ function describeEvent(e: Event): string {
 export async function DraftDetail({ id, mode }: { id: string; mode: "page" | "pane" }) {
   await requireSession();
 
-  const [drafts, events] = (await Promise.all([
+  const [drafts, events, crm, cfgRows] = (await Promise.all([
     sql`select * from v_review_queue where outreach_id = ${id}`,
     sql`
       select id::int as id, action, before, after, created_at
@@ -111,7 +114,12 @@ export async function DraftDetail({ id, mode }: { id: string; mode: "page" | "pa
       where entity = 'outreach' and entity_id = ${id}
       order by created_at desc, id desc
       limit 50`,
-  ])) as [Draft[], Event[]];
+    sql`
+      select company_hs_id, contact_hs_id, deal_hs_id, deal_stage, last_error
+      from v_crm_status
+      where outreach_id = ${id}`,
+    sql`select payload->'hubspot' as hubspot from config_versions order by id desc limit 1`,
+  ])) as [Draft[], Event[], CrmRow[], { hubspot: unknown }[]];
   const d = drafts[0];
   if (!d) {
     if (mode === "page") notFound();
@@ -140,6 +148,10 @@ export async function DraftDetail({ id, mode }: { id: string; mode: "page" | "pa
 
   const linkedin = httpUrl(d.contact_linkedin);
   const template = d.llm_provider === "template";
+  const hubspot = readHubspotCfg(cfgRows[0]?.hubspot);
+  // Same rule as v_hubspot_scope: approved or sent, account not vetoed.
+  const inCrmScope =
+    (d.approval_status === "approved" || d.send_status === "sent") && d.account_status !== "rejected";
   const Title = mode === "page" ? "h1" : "h2";
 
   return (
@@ -204,6 +216,7 @@ export async function DraftDetail({ id, mode }: { id: string; mode: "page" | "pa
             <Fact term="Red flags" value={d.red_flags} warn />
             <Fact term="Clay summary" value={d.clay_summary} />
             <Fact term="Tech stack" value={d.tech_stack} />
+            {hubspot ? <CrmStatus inScope={inCrmScope} row={crm[0] ?? null} cfg={hubspot} /> : null}
           </dl>
         </Panel>
 

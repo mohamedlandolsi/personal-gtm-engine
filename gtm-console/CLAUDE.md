@@ -9,7 +9,7 @@ The schema lives in ../db/schema.sql. Read it before writing any query.
 
 ## Data rules (hard)
 - Never create, alter or drop tables, views or functions from app code. If a feature needs schema work, stop and give me the SQL.
-- Read from: v_review_queue, v_accounts, v_sync_health, ops, digest_ops, sync_ops, config_versions, console_events, contacts.
+- Read from: v_review_queue, v_accounts, v_sync_health, ops, digest_ops, sync_ops, config_versions, console_events, contacts, v_crm_status, v_hubspot_runs, v_hubspot_quarantine.
 - Write ONLY through Server Actions that call gtm_review(), gtm_veto_account(), gtm_save_config(). Never INSERT, UPDATE or DELETE directly.
 - Only use the sql tagged template from lib/db.ts. Never concatenate SQL strings.
 - bigint and count(*) arrive as strings: cast with ::int in SQL. timestamptz arrives as Date: convert to ISO strings before passing to Client Components.

@@ -23,6 +23,9 @@ const TOGGLES = [
   { path: "outreach.enabled", label: "Outreach drafting", hint: "Writes new drafts for review" },
 ] as const;
 
+// Only offered when the config has a "hubspot" block (Sprint 13), so the switch never creates one.
+const HUBSPOT_TOGGLE = { path: "hubspot.enabled", label: "HubSpot sync", hint: "Pushes approved drafts to HubSpot" };
+
 const CAP_PATH = "outreach.max_per_day";
 const CAP_MIN = 0;
 const CAP_MAX = 10;
@@ -46,6 +49,12 @@ export function ConfigSwitches({ savedText, editorDirty }: { savedText: string; 
       </section>
     );
   }
+
+  const hubspotBlock = getPath(parsed.obj, "hubspot");
+  const toggles: { path: string; label: string; hint: string }[] =
+    hubspotBlock && typeof hubspotBlock === "object" && !Array.isArray(hubspotBlock)
+      ? [...TOGGLES, HUBSPOT_TOGGLE]
+      : [...TOGGLES];
 
   function askToggle(path: string, label: string, on: boolean) {
     setChange({
@@ -91,7 +100,7 @@ export function ConfigSwitches({ savedText, editorDirty }: { savedText: string; 
       ) : null}
 
       <ul className="divide-y divide-border">
-        {TOGGLES.map((t) => {
+        {toggles.map((t) => {
           const on = getPath(parsed.obj, t.path) === true;
           const id = `switch-${t.path.replace(/\./g, "-")}`;
           return (

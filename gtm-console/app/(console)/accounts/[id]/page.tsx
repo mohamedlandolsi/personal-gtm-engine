@@ -5,8 +5,10 @@ import { sql } from "@/lib/db";
 import { requireSession } from "@/lib/session";
 import { STATE_RULE, displayState, httpUrl, timeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { readHubspotCfg, recordUrl } from "@/lib/hubspot";
 import { ChannelIcon } from "@/components/channel-icon";
 import { ClayTriggerFact } from "@/components/clay-trigger";
+import { HubspotLink, StageChip } from "@/components/crm-status";
 import { ScoreLedger } from "@/components/score-ledger";
 import { ScoreMeter } from "@/components/score-meter";
 import { StatusChip } from "@/components/status-chip";
@@ -80,6 +82,8 @@ type DraftRow = {
 
 type Event = { id: number; action: string; after: Record<string, unknown> | null; created_at: Date };
 
+type Crm = { company_hs_id: string | null; deal_stage: string | null };
+
 const words = (v: string | null) => (v ? v.replace(/_/g, " ") : null);
 const ago = (d: Date | null) => (d ? timeAgo(d.toISOString()) : null);
 const num = (n: number | string | null) => (n === null || n === "" ? null : String(n));
@@ -152,6 +156,18 @@ export default async function AccountPage({ params }: PageProps<"/accounts/[id]"
     order by created_at desc, id desc
     limit 20`) as Event[];
 
+  // Company and deal are per account, so any draft row of the account carries them.
+  const [crm] = (await sql`
+    select company_hs_id, deal_stage
+    from v_crm_status
+    where account_id = ${id}
+    order by company_hs_id nulls last, deal_stage nulls last
+    limit 1`) as Crm[];
+  const [cfgRow] = (await sql`
+    select payload->'hubspot' as hubspot from config_versions order by id desc limit 1`) as { hubspot: unknown }[];
+  const hubspot = readHubspotCfg(cfgRow?.hubspot);
+  const hubspotCompany = recordUrl(hubspot?.appHost, hubspot?.portalId, "company", crm?.company_hs_id);
+
   const website = httpUrl(a.website);
   const linkedin = httpUrl(a.linkedin_url);
   const vetoed = a.status === "rejected";
@@ -174,6 +190,16 @@ export default async function AccountPage({ params }: PageProps<"/accounts/[id]"
           {website ? <ExtLink href={website}>Website</ExtLink> : null}
           {linkedin ? <ExtLink href={linkedin}>LinkedIn</ExtLink> : null}
         </p>
+        {hubspotCompany ? (
+          <p className="flex flex-wrap items-center gap-x-3 text-[0.9375rem] text-muted-foreground">
+            <HubspotLink href={hubspotCompany}>HubSpot company</HubspotLink>
+            {crm?.deal_stage ? (
+              <span className="inline-flex items-center gap-2">
+                Deal stage <StageChip stage={crm.deal_stage} cfg={hubspot} />
+              </span>
+            ) : null}
+          </p>
+        ) : null}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">

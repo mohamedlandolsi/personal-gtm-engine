@@ -12,6 +12,7 @@ export const instant = false;
 const TABS = [
   { key: "engine", label: "Engine" },
   { key: "sync", label: "Sync" },
+  { key: "hubspot", label: "HubSpot" },
   { key: "activity", label: "Activity" },
 ] as const;
 type Tab = (typeof TABS)[number]["key"];
@@ -51,6 +52,20 @@ type SyncRun = {
   warnings: string | null;
   duration_ms: number | null;
 };
+
+// started_at arrives as a Date; the page turns it into an ISO string before rendering.
+type HubspotRun = {
+  run_id: string;
+  started_at: string;
+  created: number;
+  updated: number;
+  adopted: number;
+  failed: number;
+  stage_changes: number;
+  errors_sample: string | null;
+};
+
+type Quarantined = { link_type: string; local_id: string; failures: number; last_error: string | null };
 
 type Event = {
   id: number;
@@ -268,6 +283,87 @@ function SyncTab({ rows }: { rows: SyncRun[] }) {
   );
 }
 
+function IsoTime({ iso }: { iso: string }) {
+  return (
+    <span className="tabular whitespace-nowrap text-ink-3" title={iso}>
+      {timeAgo(iso)}
+    </span>
+  );
+}
+
+function QuarantineNote({ rows }: { rows: Quarantined[] }) {
+  if (rows.length === 0) return null;
+  return (
+    <section className="space-y-2 rounded-lg border bg-danger-tint p-4 text-[0.9375rem]">
+      <Flag tone="danger">
+        {rows.length} {rows.length === 1 ? "record" : "records"} stopped after 3 failures
+      </Flag>
+      <ul className="space-y-2">
+        {rows.map((q) => (
+          <li key={`${q.link_type}:${q.local_id}`} className="space-y-0.5">
+            <p className="flex flex-wrap gap-x-2">
+              <span className="font-medium">{q.link_type}</span>
+              <span className="font-mono text-[0.8125rem] wrap-anywhere">{q.local_id}</span>
+            </p>
+            {q.last_error ? <div className="text-[0.8125rem]"><Expandable text={q.last_error} /></div> : null}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function HubspotTab({ rows, quarantine }: { rows: HubspotRun[]; quarantine: Quarantined[] }) {
+  if (rows.length === 0 && quarantine.length === 0) {
+    return <Empty text="No HubSpot sync runs yet. Start n8n on your laptop so GTM HubSpot Sync can run." href="/runs?tab=sync" action="Check sync runs" />;
+  }
+  return (
+    <>
+      <QuarantineNote rows={quarantine} />
+      <TableShell>
+        <thead>
+          <tr className={HEAD}>
+            <Th>Run</Th><Th>Started</Th><Th right>Created</Th><Th right>Updated</Th><Th right>Adopted</Th>
+            <Th right>Failed</Th><Th right>Stage changes</Th><Th>Errors</Th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {rows.map((r) => (
+            <tr key={r.run_id} className={ROW}>
+              <td className="px-3 py-2.5 font-mono text-[0.8125rem]">{r.run_id}</td>
+              <td className="px-3 py-2.5"><IsoTime iso={r.started_at} /></td>
+              <Num>{r.created}</Num>
+              <Num>{r.updated}</Num>
+              <Num>{r.adopted}</Num>
+              <td className="tabular px-3 py-2.5 text-right">
+                {r.failed > 0 ? <Flag tone="danger">{r.failed}</Flag> : r.failed}
+              </td>
+              <Num>{r.stage_changes}</Num>
+              <td className="max-w-[20rem] px-3 py-2.5 text-[0.8125rem]"><Expandable text={r.errors_sample} /></td>
+            </tr>
+          ))}
+        </tbody>
+      </TableShell>
+      <Blocks>
+        {rows.map((r) => (
+          <li key={r.run_id} className="space-y-1 px-4 py-3 text-[0.9375rem]">
+            <div className="flex items-baseline gap-2">
+              <IsoTime iso={r.started_at} />
+              <span className="ml-auto font-mono text-[0.8125rem] text-muted-foreground">run {r.run_id}</span>
+            </div>
+            <p className="tabular">
+              <strong>{r.created}</strong> created, <strong>{r.updated}</strong> updated, <strong>{r.adopted}</strong> adopted,{" "}
+              <strong>{r.stage_changes}</strong> stage changes
+            </p>
+            {r.failed > 0 ? <Flag tone="danger">{r.failed} failed</Flag> : null}
+            {r.errors_sample ? <div className="text-[0.8125rem]"><Expandable text={r.errors_sample} /></div> : null}
+          </li>
+        ))}
+      </Blocks>
+    </>
+  );
+}
+
 function entityHref(e: Event): string | null {
   if (e.entity === "outreach") return `/queue/${encodeURIComponent(e.entity_id)}`;
   if (e.entity === "account") return `/accounts/${encodeURIComponent(e.entity_id)}`;
@@ -350,6 +446,17 @@ export default async function RunsPage({ searchParams }: PageProps<"/runs">) {
              config_state, warnings, duration_ms
       from sync_ops order by run_at desc, id desc limit 30`) as SyncRun[];
     body = <SyncTab rows={rows} />;
+  } else if (tab === "hubspot") {
+    const [runs, quarantine] = (await Promise.all([
+      sql`
+        select run_id, started_at, created, updated, adopted, failed, stage_changes, errors_sample
+        from v_hubspot_runs order by started_at desc limit 20`,
+      sql`
+        select link_type, local_id, failures, last_error
+        from v_hubspot_quarantine order by last_failed_at desc`,
+    ])) as [(Omit<HubspotRun, "started_at"> & { started_at: Date })[], Quarantined[]];
+    const rows: HubspotRun[] = runs.map((r) => ({ ...r, started_at: r.started_at.toISOString() }));
+    body = <HubspotTab rows={rows} quarantine={quarantine} />;
   } else {
     const rows = (await sql`
       select id::int as id, entity, entity_id, action, before, after, actor, created_at
