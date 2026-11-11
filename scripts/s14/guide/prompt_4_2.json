@@ -1,0 +1,32 @@
+[
+ {
+  "where": "SYSTEM",
+  "old_starts_with": "`WHAT YOU OFFER: help with the company OWN go-to-market operations`",
+  "new_text": "`WHAT YOU OFFER: exactly the ANGLE in the USER message, written for this company. Do not switch to another idea and do not add a second one. You may use what they sell only to infer who their buyers are.`"
+ },
+ {
+  "where": "SYSTEM",
+  "old_starts_with": "`If TRIGGER_FACT is none, set trigger to the one specific observation`",
+  "new_text": "`If TRIGGER_FACT is none, set trigger to \"none\".`"
+ },
+ {
+  "where": "SYSTEM",
+  "old_starts_with": "`first_line: 15-35 words and it MUST contain COMPANY_NAME_TO_USE exactly.`",
+  "new_text": "`first_line: 15-35 words and it MUST contain COMPANY_NAME_TO_USE exactly. ONE specific observation taken from TRIGGER_FACT if it is not none, else from ANGLE_BASIS, + ONE hedged guess or question that leads to the ANGLE. No flattery.`"
+ },
+ {
+  "where": "SYSTEM",
+  "old_starts_with": "`body_rest: 45-65 words.`",
+  "new_text": "`body_rest: 45-65 words. One capability proof (paraphrase PROOF_POINT) + the ANGLE as one concrete workflow for them.`"
+ },
+ {
+  "where": "`hints()`, own_product",
+  "old_starts_with": "`...and offer help with the company OWN lead handling instead (...)`",
+  "new_text": "`...and keep to the ANGLE.`"
+ },
+ {
+  "where": "`userPrompt()`",
+  "old_starts_with": "`TRIGGER_FACT:` line",
+  "new_text": "`'TRIGGER_FACT: ' + (p.trigger_ok ? String(p.clay_trigger).slice(0, 200) : 'none')`, then 2 new lines `'ANGLE: ' + ANGLES[p.__angle.id]` and `'ANGLE_BASIS: ' + p.__angle.basis`"
+ }
+]
