@@ -4,6 +4,7 @@
 //   apply a file : node scripts/s14/neon_branch.mjs apply db/s14_engine_fixes.sql
 //   run a query  : node scripts/s14/neon_branch.mjs query "select 1"
 //   save fixture : node scripts/s14/neon_branch.mjs save scripts/s14/fixtures/x.json "select ..."
+//   try and undo  : node scripts/s14/neon_branch.mjs rollback file.sql   (begin, run, print, ROLLBACK: nothing is kept)
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -35,6 +36,12 @@ try {
     const r = await client.query(b);
     fs.writeFileSync(a, JSON.stringify(r.rows, null, 1));
     console.log('saved ' + r.rows.length + ' rows to ' + a);
+  } else if (mode === 'rollback') {
+    await client.query('begin');
+    try {
+      const res = await client.query(fs.readFileSync(a, 'utf8'));
+      for (const r of (Array.isArray(res) ? res : [res])) console.log(JSON.stringify(r.rows, null, 1));
+    } finally { await client.query('rollback'); console.log('rolled back'); }
   } else { console.error('unknown mode'); process.exitCode = 2; }
 } catch (e) {
   console.error('ERROR: ' + (e.message || e)); process.exitCode = 1;
