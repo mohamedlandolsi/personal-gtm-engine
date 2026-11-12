@@ -29,6 +29,7 @@ Ten n8n workflows, one Google Sheet, one Neon Postgres database, a Next.js revie
 |---|---|---|---|
 | Personal GTM Engine | 59 | Manual | Discovery, gates, scoring, website enrichment, contact merge, drafting into Neon |
 | GTM Contact Finder | 13 | Manual | Founder lookup: YC page first, Tavily as a gated fallback |
+| GTM Run | 8 | Manual | Sprint 14 run chain: GTM Neon Sync, Engine, Contact Finder, Engine, GTM Neon Sync, then fails loudly if accounts are still queued for contacts (ADR-105). The three called workflows each have a "When Executed by Another Workflow" trigger |
 | GTM Neon Sync | 15 | Every 15 min (published) | Pushes console decisions to Sheets, then mirrors Sheets into Neon through `gtm_sync_pull()` |
 | GTM Clay Bridge | 11 | Manual | Imports the Clay accounts export into `clay_results` (new domains) and `accounts.clay_trigger*` (all domains) |
 | Clay Email Queue | 7 | Manual | Picks one primary contact per account for the Clay email waterfall |
@@ -38,7 +39,7 @@ Ten n8n workflows, one Google Sheet, one Neon Postgres database, a Next.js revie
 | GTM HubSpot Sync | 24 | Every 30 min (published) | Reads the Neon outbox in 6 steps (companies, contacts, deals, notes, tasks, stage moves), pushes each row through `HubSpot Upsert Record`, records results with `gtm_hubspot_record()`, then pulls changed deal stages back with `gtm_hubspot_pull_stages()` |
 | HubSpot Upsert Record | 11 | Called by GTM HubSpot Sync (published sub-workflow) | One record: update by HubSpot id, or search the natural key and adopt, or create with associations. Returns ok, action, id or error |
 
-In n8n they sit in folders: `1 Core` (Engine, Contact Finder), `2 Clay` (Bridge, Email Queue, Email Import, Meter), `3 Ops` (Neon Sync, Error Alerts), `4 CRM` (HubSpot Sync, HubSpot Upsert Record).
+In n8n they sit in folders: `1 Core` (Engine, Contact Finder, GTM Run), `2 Clay` (Bridge, Email Queue, Email Import, Meter), `3 Ops` (Neon Sync, Error Alerts), `4 CRM` (HubSpot Sync, HubSpot Upsert Record).
 
 Each workflow sits on a real boundary: a human step (Contact Finder results, Clay runs, CSV exports), a paid-credit gate (Tavily, Clay), or an external tool.
 
@@ -108,6 +109,20 @@ One GET per new account. Regex signatures detect CRM and tooling (HubSpot, Sales
 
 ### Drafting
 
+Sprint 14 put fixed rules in front of every LLM call. The draft path is:
+
+blocks -> buyer role -> small-team gate -> classify -> gate or angle -> LLM -> validator -> pending | needs_redraft
+
+1. **Blocks** (`Select Outreach Pairs`, Neon view `v_outreach_blocks`): a vetoed account, a rejected draft with scope `account` (or an older rejection with no scope), or a scope `pitch` rejection with no newer dated trigger: no new draft at that account (ADR-103).
+2. **Buyer role**: `buyerScore()` ranks titles (CEO 100, ops and revenue leads 90, founder 70, technical titles 30). Under `outreach.min_buyer_score` (60): skipped. Contacts older than `outreach.max_contact_age_days` are skipped too. Newest accounts first, then score plus the region bonus (ADR-109).
+3. **Small-team gate**: under `outreach.small_team_no_trigger` (10) people and no valid trigger (known type, dated, or a named hiring role): skipped, re-checked next run (ADR-111). Steps 1 to 3 write nothing.
+4. **Classify** (`Draft Outreach`): the homepage is always read once. Tools count only from script, embed or form hosts. Fixed keyword rules give `product_category` and `account_type`.
+5. **Gate or angle**: sells GTM tooling or is hardware: a visible `rejected` row with scope `account` and provider `gate:product_overlap` or `gate:hardware`, unless the account is in `outreach.gate_overrides` (ADR-106). Otherwise code picks 1 of 6 angles (hire_bridge, delivery_ops, client_reporting, demo_brief, booking_followup, signup_activation) with its basis; none fits: `rejected`, scope `pitch`, provider `gate:no_angle` (ADR-107).
+6. **LLM** writes the chosen angle only. The stored `angle` and `trigger` are set by code afterwards.
+7. **Validator** (rules below, plus v2: `unpunctuated_end`, `copied_source`). A template draft, or one still invalid after the repair retry, goes to `needs_redraft`, outside the Review tab (ADR-108). Only a valid LLM draft is `pending`.
+
+The flowchart below is the LLM part (steps 6 and 7).
+
 ```mermaid
 flowchart TB
     A[Pair: account + contact] --> B["Homepage title and meta description (if no Clay summary)"]
@@ -117,7 +132,8 @@ flowchart TB
     E -->|JSON| V{"Validator"}
     V -->|fail| R["One repair retry with plain-language hints"] --> V
     V -->|pass| OUT["Neon outreach_queue row, pending"]
-    E -->|all failed| TPL[Deterministic template] --> OUT
+    R -->|still invalid| RD["needs_redraft (Sprint 14)"]
+    E -->|all failed| TPL[Deterministic template] --> RD
 ```
 
 Validator rules (deterministic): word counts per field, LinkedIn note length, follow-up lengths, company named in the first line, no links or placeholders, no money or percentages, no invented numbers, tool whitelist (only tools detected on the company's site), no first-person claims about the recipient, no partnership pitch, hedged statements only, no "which means" conclusions, no "ops team" at companies of 20 or fewer, and no product terms outside the observation. Every rejection reason lands in `risk_notes` so a reviewer sees why a draft needed a retry.

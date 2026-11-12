@@ -92,6 +92,21 @@ Then:
 | 4 | Personal GTM Engine | `ops` last row | `contacts_written` and `outreach_drafts_written` above 0 |
 | 5 | You, in the console | **Queue** | New drafts under Review. Approve, edit or reject; send by hand; **Mark sent** |
 
+Since Sprint 14, steps 1 to 4 are one click: open `GTM Run` and execute it. It calls GTM Neon Sync, the Engine, GTM Contact Finder, the Engine again and GTM Neon Sync, each waiting for the one before. If it stops with "N accounts still queued for contacts. Run GTM Run again.", that is the designed signal: run it once more. A manual run of `GTM Run` uses the draft versions of the three called workflows (n8n 2.3 and later); on an older n8n, publish the Engine and Contact Finder first (they have no schedule, so publishing only makes them callable).
+
+### Sprint 14 config keys
+
+Add these in the console (**Config**, save with a new rev). Every key has the same default in code, so a missing key never breaks a run.
+
+| Key | Default | What it does |
+|---|---|---|
+| `outreach.min_buyer_score` | 60 | Contacts whose title scores below this buying-role score get no draft |
+| `outreach.max_contact_age_days` | 30 | Contacts found longer ago than this get no draft |
+| `outreach.small_team_no_trigger` | 10 | Accounts under this many people need a valid trigger before a draft |
+| `outreach.gate_overrides` | `[]` | `account_id`s that skip the product-overlap and hardware gates; add one, then Re-draft |
+| `priority.region_bonus` | 5 | Points added to the sort order (not to `final_score`) for accounts in `priority.regions` |
+| `priority.regions` | EU countries, UK, Norway, Iceland, Liechtenstein, Switzerland | Lower-case country names that get the region bonus |
+
 Clay, when you use it: run `Clay Meter` before and after, run Clay tables by selection only, and keep auto-run off on both tables (Free plan: 100 Data Credits and 500 Actions a month).
 
 ## 9. Troubleshooting

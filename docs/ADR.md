@@ -705,6 +705,69 @@ Consolidated from every ADR in the project docs (SPEC, Roadmap, Sprint 1 to 7 gu
 **Trade-offs / consequences:** Every contact claims the same basis. A contact who objects must be handled in HubSpot and suppressed in the engine.
 **Source:** claude/Sprint 13 - HubSpot Integration Guide.md (originally numbered ADR-S13-13 in that doc)
 
+## ADR-103: A rejected draft blocks its whole account by default
+**Status:** Accepted
+**Context:** Draft Review of 2026-11-03 (Sprint 14). Alternative considered: block only the rejected contact (the behavior that produced the 8 Nov 3 drafts).
+**Decision:** A rejected draft blocks its whole account by default; old rejections with no scope count as `account`.
+**Trade-offs / consequences:** Accounts rejected for a contact-only reason (Finbar and klassif.ai: no verified email) stay blocked until you reopen and reject with scope `contact`.
+**Source:** Sprints/Sprint 14 - Engine Fixes Guide.md (ADR table)
+
+## ADR-104: Derive new facts at draft time and store them on outreach_queue
+**Status:** Accepted
+**Context:** Draft Review of 2026-11-03 (Sprint 14). Alternative considered: add `tech_detected`, `integrates_with`, `product_category`, `trigger_url`, `employee_count_date` to the accounts tab.
+**Decision:** Derive new facts at draft time and store them on `outreach_queue` in Neon; no new Sheet columns.
+**Trade-offs / consequences:** One homepage GET per draft (at most 8 per run, free); the accounts list can't filter by category until accounts move to Neon.
+**Source:** Sprints/Sprint 14 - Engine Fixes Guide.md (ADR table)
+
+## ADR-105: GTM Run chains the sync, engine and Contact Finder
+**Status:** Accepted
+**Context:** Draft Review of 2026-11-03 (Sprint 14). Alternative considered: merge the Contact Finder into the engine.
+**Decision:** `GTM Run` chains Neon Sync, Engine, Contact Finder, Engine, Neon Sync.
+**Trade-offs / consequences:** Two engine passes per run, about 3 extra minutes; keeps "queue and rescore never touch the same account in one run" and every workflow testable alone.
+**Source:** Sprints/Sprint 14 - Engine Fixes Guide.md (ADR table)
+
+## ADR-106: Product overlap is a fixed-rule gate with a visible row
+**Status:** Accepted
+**Context:** Draft Review of 2026-11-03 (Sprint 14). Alternative considered: auto-veto silently, or draft with a warning.
+**Decision:** Product overlap is a fixed-rule gate that writes a visible `rejected` row (`gate:*`), overridable per account.
+**Trade-offs / consequences:** Loses some fair targets that sell GTM tooling (Mailwarm would be gated today); spends 0 LLM calls on them.
+**Source:** Sprints/Sprint 14 - Engine Fixes Guide.md (ADR table)
+
+## ADR-107: Code picks the angle, the LLM only writes
+**Status:** Accepted
+**Context:** Draft Review of 2026-11-03 (Sprint 14). Alternative considered: let the LLM pick the angle (Oct 7 to Nov 3 behavior: about 30 of 37 drafts got the same pitch).
+**Decision:** Code picks 1 of 6 angles from the business model; the LLM only writes.
+**Trade-offs / consequences:** Less variety; no matching angle means no draft (scope `pitch`, reopened by a newer dated trigger).
+**Source:** Sprints/Sprint 14 - Engine Fixes Guide.md (ADR table)
+
+## ADR-108: Template and invalid drafts go to needs_redraft
+**Status:** Accepted
+**Context:** Draft Review of 2026-11-03 (Sprint 14). Alternative considered: keep them `pending` with a `template_review_hard` flag.
+**Decision:** Template and invalid drafts go to `needs_redraft`, outside Review.
+**Trade-offs / consequences:** One more tab; such a draft needs an edit before it can be approved.
+**Source:** Sprints/Sprint 14 - Engine Fixes Guide.md (ADR table)
+
+## ADR-109: Region is a sort preference, not part of final_score
+**Status:** Accepted
+**Context:** Draft Review of 2026-11-03 (Sprint 14). Alternative considered: add +5 to `final_score`, as the review proposed.
+**Decision:** Region is a sort preference (+5 in the contact and draft queues), not part of `final_score`.
+**Trade-offs / consequences:** Scores stay a pure fit measure and the 65 threshold keeps its meaning; region can't lift a weak account over it.
+**Source:** Sprints/Sprint 14 - Engine Fixes Guide.md (ADR table)
+
+## ADR-110: Defer employee_count_date, country source and LinkedIn verification
+**Status:** Accepted
+**Context:** Draft Review of 2026-11-03 (Sprint 14). Alternative considered: build them now.
+**Decision:** Defer `employee_count_date`, country source and LinkedIn verification.
+**Trade-offs / consequences:** Low impact today (3.5); revisit when accounts move to Neon.
+**Source:** Sprints/Sprint 14 - Engine Fixes Guide.md (ADR table)
+
+## ADR-111: Small teams without a valid trigger get no draft
+**Status:** Accepted
+**Context:** Draft Review of 2026-11-03 (Sprint 14). Alternative considered: draft anyway and let review filter.
+**Decision:** Under 10 people without a valid trigger: no draft, re-checked every run.
+**Trade-offs / consequences:** Moby-type accounts (4 people, demo-led, approved on Oct 29) are skipped until a trigger appears; 11 of the 25 Nov 3 accounts are under 10 people.
+**Source:** Sprints/Sprint 14 - Engine Fixes Guide.md (ADR table)
+
 ---
 
 ## Notes
