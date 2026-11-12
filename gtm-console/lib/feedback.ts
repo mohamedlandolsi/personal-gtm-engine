@@ -11,6 +11,9 @@ const KNOWN: [prefix: string, title: string][] = [
   ["already_rejected", "This account is already vetoed"],
   ["invalid_transition", "That action is not allowed in this state"],
   ["invalid_input", "Some fields are too long or missing"],
+  ["needs_redraft", "Edit this draft or ask for a re-draft before approving"],
+  ["invalid_scope", "Pick why you are rejecting this draft"],
+  ["reason_too_long", "The reason is over 500 characters"],
 ];
 
 export function errorTitle(error: string): string {

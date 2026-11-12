@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { sql } from "@/lib/db";
 import { requireSession } from "@/lib/session";
-import { displayState, timeAgo } from "@/lib/format";
+import { displayState, gateName, timeAgo } from "@/lib/format";
 import { DraftDetail } from "@/components/draft-detail";
 import { QueueWorkspace, type QueueRow } from "@/components/queue-workspace";
 import { SegmentedLinks } from "@/components/segmented-links";
@@ -11,6 +11,8 @@ export const instant = false;
 
 const TABS = [
   { key: "review", label: "Review" },
+  // Sprint 14: template and invalid drafts wait here until they are edited, re-drafted or rejected.
+  { key: "redraft", label: "Re-draft" },
   { key: "approved", label: "Approved" },
   { key: "rejected", label: "Rejected" },
   { key: "sent", label: "Sent" },
@@ -30,6 +32,8 @@ type Row = {
   run_date: Date | null;
   approval_status: string;
   send_status: string;
+  llm_provider: string | null;
+  notes: string | null;
 };
 
 export default async function QueuePage({ searchParams }: PageProps<"/queue">) {
@@ -42,6 +46,7 @@ export default async function QueuePage({ searchParams }: PageProps<"/queue">) {
   const [counts] = (await sql`
     select
       count(*) filter (where approval_status in ('pending','edited') and send_status = 'not_sent')::int as review,
+      count(*) filter (where approval_status = 'needs_redraft' and send_status = 'not_sent')::int as redraft,
       count(*) filter (where approval_status = 'approved' and send_status = 'not_sent')::int as approved,
       count(*) filter (where approval_status = 'rejected')::int as rejected,
       count(*) filter (where send_status = 'sent')::int as sent,
@@ -50,9 +55,10 @@ export default async function QueuePage({ searchParams }: PageProps<"/queue">) {
 
   const rows = (await sql`
     select outreach_id, company_name, final_score, contact_name, contact_title, channel,
-           first_line, run_date, approval_status, send_status
+           first_line, run_date, approval_status, send_status, llm_provider, notes
     from v_review_queue
     where (${tab} = 'review'   and approval_status in ('pending','edited') and send_status = 'not_sent')
+       or (${tab} = 'redraft'  and approval_status = 'needs_redraft' and send_status = 'not_sent')
        or (${tab} = 'approved' and approval_status = 'approved' and send_status = 'not_sent')
        or (${tab} = 'rejected' and approval_status = 'rejected')
        or (${tab} = 'sent'     and send_status = 'sent')
@@ -60,7 +66,12 @@ export default async function QueuePage({ searchParams }: PageProps<"/queue">) {
     order by final_score desc nulls last, run_date desc nulls last
     limit 100`) as Row[];
 
-  const list: QueueRow[] = rows.map((r) => ({
+  const list: QueueRow[] = rows.map((r) => {
+    // Gate rows (Sprint 14) were written by the engine without an LLM call: show "Auto" and the gate's note.
+    const auto = gateName(r.llm_provider) !== null;
+    return {
+    auto,
+    note: auto ? r.notes : null,
     outreach_id: r.outreach_id,
     company_name: r.company_name,
     final_score: r.final_score,
@@ -70,7 +81,8 @@ export default async function QueuePage({ searchParams }: PageProps<"/queue">) {
     first_line: r.first_line,
     age: r.run_date ? timeAgo(r.run_date.toISOString()) : "",
     state: displayState(r.approval_status, r.send_status),
-  }));
+    };
+  });
 
   return (
     <div className="space-y-4">
@@ -90,6 +102,8 @@ export default async function QueuePage({ searchParams }: PageProps<"/queue">) {
         <div className="rounded-lg border bg-card px-4 py-8 text-center">
           {tab === "review" ? (
             <p>Nothing to review. New drafts arrive after the next engine run.</p>
+          ) : tab === "redraft" ? (
+            <p>Nothing needs a re-draft. Template and invalid drafts from the engine land here.</p>
           ) : (
             <p>No drafts in this view.</p>
           )}

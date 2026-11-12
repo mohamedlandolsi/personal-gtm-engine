@@ -4,6 +4,7 @@ import { useEffect, useEffectEvent, useRef, useState, useTransition } from "reac
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { review } from "@/app/(console)/queue/actions";
+import { rejectDraft } from "@/app/(console)/queue/reject-action";
 import { STATE_RULE, displayState } from "@/lib/format";
 import { toastError } from "@/lib/feedback";
 import { cn } from "@/lib/utils";
@@ -38,6 +39,15 @@ const CONTENT_FIELDS: Field[] = ["email_subject", "message_draft", "follow_up_1"
 const FOLLOW_UPS = ["follow_up_1", "follow_up_2", "follow_up_3"] as const;
 const LINKEDIN_MAX = 300;
 const LINKEDIN_WARN = 280;
+const REASON_MAX = 500;
+
+// Sprint 14: a rejection carries a scope. It decides what the engine may draft next (gtm_reject, v_outreach_blocks).
+type Scope = "contact" | "pitch" | "account";
+const SCOPES: { key: Scope; label: string; hint: (company: string) => string }[] = [
+  { key: "contact", label: "Wrong person", hint: () => "The company is fine. Another contact there can still get a draft." },
+  { key: "pitch", label: "Weak email, company OK", hint: () => "The account waits until a newer dated trigger shows up." },
+  { key: "account", label: "Bad company", hint: (company) => `This also vetoes ${company}.` },
+];
 
 // Toast titles match the button verbs.
 const DONE: Record<Exclude<Action, "save_edits">, string> = {
@@ -134,6 +144,8 @@ export function ReviewActions({
   const [editing, setEditing] = useState(false);
   const [values, setValues] = useState(() => toValues(draft));
   const [confirm, setConfirm] = useState<Confirmable | null>(null);
+  const [scope, setScope] = useState<Scope | null>(null);
+  const [reason, setReason] = useState("");
 
   const state = displayState(approvalStatus, sendStatus);
   const notSent = sendStatus === "not_sent";
@@ -141,7 +153,10 @@ export function ReviewActions({
   const reviewable = notSent && (approvalStatus === "pending" || approvalStatus === "edited");
   const approved = notSent && approvalStatus === "approved";
   const rejected = notSent && approvalStatus === "rejected";
-  const canEdit = reviewable || approved;
+  // Sprint 14: a failed or template draft. It cannot be approved until it is edited or re-drafted.
+  const needsRedraft = notSent && approvalStatus === "needs_redraft";
+  const canEdit = reviewable || approved || needsRedraft;
+  const canReject = reviewable || approved || needsRedraft;
   const linkedinFirst = channel === "linkedin_manual";
 
   const noteLength = (editing ? values.linkedin_note : (draft.linkedin_note ?? "")).length;
@@ -157,7 +172,13 @@ export function ReviewActions({
       }
       if (action === "save_edits") {
         const contentChanged = Object.keys(edits ?? {}).some((k) => CONTENT_FIELDS.includes(k as Field));
-        toast.success(approved && contentChanged ? "Changes saved, needs approval again" : "Changes saved");
+        toast.success(
+          approved && contentChanged
+            ? "Changes saved, needs approval again"
+            : needsRedraft && contentChanged
+              ? "Changes saved, now in review"
+              : "Changes saved",
+        );
       } else {
         toast.success(DONE[action]);
       }
@@ -165,6 +186,43 @@ export function ReviewActions({
       setEditing(false);
       router.refresh();
     });
+  }
+
+  function openReject() {
+    setScope(null);
+    setReason("");
+    setConfirm("reject");
+  }
+
+  // Reject goes through gtm_reject(): the scope is required, the reason is optional.
+  function submitReject() {
+    if (!scope || pending) return;
+    const picked = scope;
+    startTransition(async () => {
+      const res = await rejectDraft({ id, scope: picked, reason: reason.trim() || undefined });
+      if (!res.ok) {
+        toastError(res.error);
+        return;
+      }
+      toast.success("Rejected", picked === "account" ? { description: `${companyName} is now vetoed.` } : undefined);
+      setConfirm(null);
+      setEditing(false);
+      router.refresh();
+    });
+  }
+
+  // Inside the reject dialog: 1 2 3 pick the scope, Enter confirms (Ctrl or Cmd + Enter from the reason field).
+  function onRejectKey(e: React.KeyboardEvent) {
+    if (confirm !== "reject" || pending) return;
+    const typing = isTyping(e.target);
+    const n = Number(e.key);
+    if (!typing && !e.metaKey && !e.ctrlKey && !e.altKey && n >= 1 && n <= SCOPES.length) {
+      setScope(SCOPES[n - 1].key);
+      e.preventDefault();
+    } else if (e.key === "Enter" && scope && (!typing || e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      submitReject();
+    }
   }
 
   function startEdit() {
@@ -192,7 +250,7 @@ export function ReviewActions({
     const key = e.key.toLowerCase();
     if (key === "a" && reviewable) run("approve");
     else if (key === "e" && canEdit) startEdit();
-    else if (key === "r" && (reviewable || approved)) setConfirm("reject");
+    else if (key === "r" && canReject) openReject();
     else if (key === "j" && queue) queue.move(1);
     else if (key === "k" && queue) queue.move(-1);
     else if (key === "j" && nextId) router.push(`/queue/${encodeURIComponent(nextId)}`);
@@ -243,6 +301,21 @@ export function ReviewActions({
         </Button>
       </>
     );
+  } else if (needsRedraft) {
+    // No Approve here: gtm_review() refuses it until the draft is edited or re-drafted.
+    buttons = (
+      <>
+        <Button className={cn(btn, "flex-[2] sm:flex-none")} disabled={pending} onClick={startEdit}>
+          Edit<Kbd>E</Kbd>
+        </Button>
+        <Button variant="outline" className={cn(btn, "flex-1 sm:flex-none")} disabled={pending} onClick={() => setConfirm("redraft")}>
+          Re-draft
+        </Button>
+        <Button variant="outline" className={cn(btn, "flex-1 sm:flex-none")} disabled={pending} onClick={openReject}>
+          Reject<Kbd>R</Kbd>
+        </Button>
+      </>
+    );
   } else {
     buttons = (
       <>
@@ -258,7 +331,7 @@ export function ReviewActions({
         <Button variant="outline" className={cn(btn, "flex-1 sm:flex-none")} disabled={pending} onClick={startEdit}>
           Edit<Kbd>E</Kbd>
         </Button>
-        <Button variant="outline" className={cn(btn, "flex-1 sm:flex-none")} disabled={pending} onClick={() => setConfirm("reject")}>
+        <Button variant="outline" className={cn(btn, "flex-1 sm:flex-none")} disabled={pending} onClick={openReject}>
           Reject<Kbd>R</Kbd>
         </Button>
         <Button variant="ghost" className={cn(btn, "flex-1 sm:flex-none")} disabled={pending} onClick={() => setConfirm("redraft")}>
@@ -271,7 +344,7 @@ export function ReviewActions({
   const confirmCopy: Record<Confirmable, { title: string; body: string; button: string }> = {
     reject: {
       title: `Reject the draft to ${contactName} at ${companyName}?`,
-      body: "It leaves the review queue. You can reopen it later.",
+      body: "Pick why. The reason decides what the engine may draft next. You can reopen the draft later.",
       button: "Reject",
     },
     redraft: {
@@ -376,25 +449,79 @@ export function ReviewActions({
         </div>
       </article>
 
-      <section className="space-y-2 rounded-lg border bg-card p-4">
-        <h2 className="text-[1.0625rem] font-semibold">Notes</h2>
-        {editing ? (
-          <Textarea rows={3} maxLength={2000} value={values.notes} onChange={set("notes")} aria-label="Notes" />
-        ) : draft.notes ? (
-          <p className="whitespace-pre-wrap">{draft.notes}</p>
-        ) : (
-          <p className="text-ink-3">No notes.</p>
-        )}
-      </section>
+      {/* A rejected draft shows its notes in the rejection panel above the sheet (draft-detail), not twice. */}
+      {rejected ? null : (
+        <section className="space-y-2 rounded-lg border bg-card p-4">
+          <h2 className="text-[1.0625rem] font-semibold">Notes</h2>
+          {editing ? (
+            <Textarea rows={3} maxLength={2000} value={values.notes} onChange={set("notes")} aria-label="Notes" />
+          ) : draft.notes ? (
+            <p className="whitespace-pre-wrap">{draft.notes}</p>
+          ) : (
+            <p className="text-ink-3">No notes.</p>
+          )}
+        </section>
+      )}
 
       <Dialog open={confirm !== null} onOpenChange={(open) => { if (!open) setConfirm(null); }}>
-        <DialogContent>
+        <DialogContent onKeyDown={onRejectKey}>
           {confirm ? (
             <>
               <DialogHeader>
                 <DialogTitle className="leading-snug">{confirmCopy[confirm].title}</DialogTitle>
                 <DialogDescription>{confirmCopy[confirm].body}</DialogDescription>
               </DialogHeader>
+              {confirm === "reject" ? (
+                <>
+                  <div role="radiogroup" aria-label="Why reject" className="grid gap-2">
+                    {SCOPES.map((o, i) => {
+                      const on = scope === o.key;
+                      return (
+                        <button
+                          key={o.key}
+                          type="button"
+                          role="radio"
+                          aria-checked={on}
+                          disabled={pending}
+                          onClick={() => setScope(o.key)}
+                          className={cn(
+                            "flex min-h-11 items-start gap-3 rounded-md border px-3 py-2 text-left",
+                            on ? "border-foreground bg-secondary" : "border-input hover:bg-secondary",
+                          )}
+                        >
+                          <span
+                            aria-hidden
+                            className={cn(
+                              "mt-1 size-3.5 shrink-0 rounded-full border",
+                              on ? "border-foreground bg-foreground" : "border-input",
+                            )}
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-[0.9375rem] font-medium">{o.label}</span>
+                            <span className="block text-[0.8125rem] text-muted-foreground">{o.hint(companyName)}</span>
+                          </span>
+                          <kbd className="hidden rounded border border-current/30 px-1 font-sans text-[0.6875rem] leading-4 opacity-70 lg:inline">
+                            {i + 1}
+                          </kbd>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <label className="block space-y-1">
+                    <span className="text-[0.8125rem] font-medium text-muted-foreground">Reason (optional)</span>
+                    <Textarea
+                      rows={2}
+                      maxLength={REASON_MAX}
+                      value={reason}
+                      onChange={(e) => setReason(e.target.value)}
+                      placeholder="For example: sells sales tooling, or try the CEO instead"
+                    />
+                    <span className="tabular block text-right text-[0.8125rem] text-ink-3">
+                      {reason.length} of {REASON_MAX}
+                    </span>
+                  </label>
+                </>
+              ) : null}
               <DialogFooter>
                 <Button variant="outline" className="h-11 sm:h-9" disabled={pending} onClick={() => setConfirm(null)}>
                   Cancel
@@ -402,8 +529,8 @@ export function ReviewActions({
                 <Button
                   variant={confirm === "mark_sent" ? "default" : "destructive"}
                   className="h-11 sm:h-9"
-                  disabled={pending}
-                  onClick={() => run(confirm)}
+                  disabled={pending || (confirm === "reject" && !scope)}
+                  onClick={() => (confirm === "reject" ? submitReject() : run(confirm))}
                 >
                   {confirmCopy[confirm].button}
                 </Button>

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Search } from "lucide-react";
 import { sql } from "@/lib/db";
 import { requireSession } from "@/lib/session";
-import { timeAgo } from "@/lib/format";
+import { blockLabel, timeAgo } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScoreMeter } from "@/components/score-meter";
@@ -32,11 +32,15 @@ type Account = {
   contacts_count: number;
   drafts_count: number;
   run_date: Date | null;
+  block_reason: string | null;
 };
 
 const words = (v: string | null) => (v ? v.replace(/_/g, " ") : "");
 
-function AccountStatus({ status }: { status: string | null }) {
+function AccountStatus({ status, block }: { status: string | null; block: string | null }) {
+  // Sprint 14: an account the drafter skips (vetoed, or a rejected draft) carries the gray chip with the reason.
+  const blocked = blockLabel(block);
+  if (blocked) return <StatusChip state="rejected" label={blocked} />;
   // A vetoed account is the one account state worth a state color; the rest are plain facts.
   if (status === "rejected") return <StatusChip state="rejected" />;
   return <span>{words(status)}</span>;
@@ -57,7 +61,7 @@ export default async function AccountsPage({ searchParams }: PageProps<"/account
 
   const rows = (await sql`
     select account_id, company_name, domain, final_score, priority, status, enrichment_status,
-           clay_status, contact_status, contacts_count, drafts_count, run_date
+           clay_status, contact_status, contacts_count, drafts_count, run_date, block_reason
     from v_accounts
     where (${q} = '' or company_name ilike '%' || ${like} || '%' or domain ilike '%' || ${like} || '%')
       and (${filter} = 'all'
@@ -120,7 +124,7 @@ export default async function AccountsPage({ searchParams }: PageProps<"/account
                   </div>
                   <div className="flex items-center gap-2 text-[0.8125rem] text-muted-foreground">
                     <span className="min-w-0 truncate">{a.domain}</span>
-                    <span className="ml-auto shrink-0"><AccountStatus status={a.status} /></span>
+                    <span className="ml-auto shrink-0"><AccountStatus status={a.status} block={a.block_reason} /></span>
                   </div>
                   <p className="tabular flex text-[0.8125rem] text-ink-3">
                     <span>
@@ -161,7 +165,7 @@ export default async function AccountsPage({ searchParams }: PageProps<"/account
                     </td>
                     <td className="px-3 py-3"><ScoreMeter score={a.final_score} /></td>
                     <td className="px-3 py-3 font-semibold">{a.priority === "true" ? "Yes" : ""}</td>
-                    <td className="px-3 py-3"><AccountStatus status={a.status} /></td>
+                    <td className="px-3 py-3"><AccountStatus status={a.status} block={a.block_reason} /></td>
                     <td className="px-3 py-3 text-muted-foreground">{words(a.enrichment_status)}</td>
                     <td className="px-3 py-3 text-muted-foreground">{words(a.clay_status)}</td>
                     <td className="px-3 py-3 text-muted-foreground">{words(a.contact_status)}</td>

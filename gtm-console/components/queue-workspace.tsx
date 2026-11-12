@@ -24,6 +24,10 @@ export type QueueRow = {
   first_line: string | null;
   age: string;
   state: DisplayState;
+  /** Sprint 14 gate row: rejected by the engine before any LLM call. */
+  auto?: boolean;
+  /** The gate's note, shown in place of the (empty) first line. */
+  note?: string | null;
 };
 type Item = QueueRow & { leaving?: boolean };
 
@@ -104,6 +108,12 @@ function Row({
           <span className="min-w-0 truncate font-semibold">{row.company_name ?? "Unknown company"}</span>
           <ScoreMeter score={row.final_score} />
           {showChip ? <FadeStatusChip state={row.state} /> : null}
+          {/* Provenance, not a draft state: a neutral chip. */}
+          {row.auto ? (
+            <span className="inline-flex h-6 shrink-0 items-center rounded bg-secondary px-2 text-[0.8125rem] font-medium">
+              Auto
+            </span>
+          ) : null}
           <span className="tabular ml-auto shrink-0 text-[0.8125rem] text-ink-3">{row.age}</span>
         </div>
         <div className="flex items-center gap-2 text-[0.8125rem] text-muted-foreground">
@@ -114,6 +124,8 @@ function Row({
         </div>
         {row.first_line ? (
           <p className="line-clamp-2 font-serif text-[1.0625rem] leading-relaxed">{row.first_line}</p>
+        ) : row.note ? (
+          <p className="line-clamp-2 text-[0.8125rem] text-muted-foreground">{row.note}</p>
         ) : null}
       </Link>
     </li>

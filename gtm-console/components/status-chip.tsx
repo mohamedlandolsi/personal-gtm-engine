@@ -8,6 +8,7 @@ const LABEL: Record<DisplayState, string> = {
   rejected: "Rejected",
   sent: "Sent",
   superseded: "Superseded",
+  needs_redraft: "Needs re-draft",
 };
 
 // Text plus tint, no dot, no pill. Pass the raw columns or an already resolved state.

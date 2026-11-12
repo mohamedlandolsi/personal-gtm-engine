@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { CircleCheck, ExternalLink, TriangleAlert } from "lucide-react";
 import { sql } from "@/lib/db";
 import { requireSession } from "@/lib/session";
-import { STATE_RULE, displayState, httpUrl, timeAgo } from "@/lib/format";
+import { STATE_RULE, blockLabel, displayState, httpUrl, timeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { readHubspotCfg, recordUrl } from "@/lib/hubspot";
 import { ChannelIcon } from "@/components/channel-icon";
@@ -55,6 +55,8 @@ type Account = {
   clay_trigger_date: string | null;
   contacts_count: number;
   drafts_count: number;
+  // Sprint 14: why the drafter skips this account (v_outreach_blocks), if it does.
+  block_reason?: string | null;
 };
 
 type Contact = {
@@ -171,6 +173,7 @@ export default async function AccountPage({ params }: PageProps<"/accounts/[id]"
   const website = httpUrl(a.website);
   const linkedin = httpUrl(a.linkedin_url);
   const vetoed = a.status === "rejected";
+  const blocked = blockLabel(a.block_reason);
   const name = a.company_name ?? a.account_id;
 
   return (
@@ -182,7 +185,11 @@ export default async function AccountPage({ params }: PageProps<"/accounts/[id]"
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <h1 className="text-2xl leading-tight font-semibold">{name}</h1>
           <ScoreMeter score={a.final_score} />
-          {vetoed ? <StatusChip state="rejected" label="Vetoed" /> : null}
+          {blocked ? (
+            <StatusChip state="rejected" label={blocked} />
+          ) : vetoed ? (
+            <StatusChip state="rejected" label="Vetoed" />
+          ) : null}
           {a.priority === "true" ? <span className="text-[0.8125rem] font-semibold">Priority</span> : null}
         </div>
         <p className="flex flex-wrap gap-x-3 text-[0.9375rem] text-muted-foreground">

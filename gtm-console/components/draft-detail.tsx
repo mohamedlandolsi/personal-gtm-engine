@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { CircleCheck, ExternalLink, TriangleAlert } from "lucide-react";
 import { sql } from "@/lib/db";
 import { requireSession } from "@/lib/session";
-import { displayState, httpUrl, timeAgo } from "@/lib/format";
+import { REJECT_SCOPE_LABELS, displayState, gateName, httpUrl, idWords, timeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ChannelIcon, channelLabel } from "@/components/channel-icon";
 import { readHubspotCfg } from "@/lib/hubspot";
@@ -54,6 +54,11 @@ type Draft = {
   clay_trigger_source: string | null;
   clay_trigger_date: string | null;
   account_status: string | null;
+  // Sprint 14: what the drafter decided, and the scope of a rejection.
+  reject_scope: string | null;
+  angle_basis: string | null;
+  account_type: string | null;
+  product_category: string | null;
 };
 
 type Event = {
@@ -148,6 +153,11 @@ export async function DraftDetail({ id, mode }: { id: string; mode: "page" | "pa
 
   const linkedin = httpUrl(d.contact_linkedin);
   const template = d.llm_provider === "template";
+  // Sprint 14: gate rows, rejections with a scope, and drafts parked for a re-draft.
+  const gate = gateName(d.llm_provider);
+  const rejected = d.approval_status === "rejected";
+  const needsRedraft = d.approval_status === "needs_redraft" && d.send_status === "not_sent";
+  const failure = d.risk_notes?.includes("llm_errors:") ? d.risk_notes.split("llm_errors:").slice(1).join("llm_errors:").trim() : "";
   const hubspot = readHubspotCfg(cfgRows[0]?.hubspot);
   // Same rule as v_hubspot_scope: approved or sent, account not vetoed.
   const inCrmScope =
@@ -166,6 +176,12 @@ export async function DraftDetail({ id, mode }: { id: string; mode: "page" | "pa
           <Title className="text-2xl leading-tight font-semibold">{d.company_name ?? "Unknown company"}</Title>
           <ScoreMeter score={d.final_score} />
           <FadeStatusChip state={displayState(d.approval_status, d.send_status)} />
+          {/* Provenance, not a draft state: a neutral chip. */}
+          {gate ? (
+            <span className="inline-flex h-6 shrink-0 items-center rounded bg-secondary px-2 text-[0.8125rem] font-medium">
+              Auto
+            </span>
+          ) : null}
         </div>
         <p className="flex flex-wrap items-center gap-x-2 text-[0.9375rem] text-muted-foreground">
           <ChannelIcon channel={d.channel} className="size-4" />
@@ -175,6 +191,31 @@ export async function DraftDetail({ id, mode }: { id: string; mode: "page" | "pa
           {d.run_date ? <span className="tabular text-ink-3">drafted {timeAgo(d.run_date.toISOString())}</span> : null}
         </p>
       </div>
+
+      {rejected ? (
+        <Panel title={gate ? "Why the engine skipped it" : "Why it was rejected"}>
+          <dl className="space-y-3">
+            <Fact
+              term="Scope"
+              value={
+                d.reject_scope
+                  ? (REJECT_SCOPE_LABELS[d.reject_scope] ?? d.reject_scope)
+                  : "Not recorded. An older rejection counts as bad company."
+              }
+            />
+            <Fact term="Notes" value={d.notes} />
+          </dl>
+        </Panel>
+      ) : null}
+
+      {needsRedraft ? (
+        <Panel title="Why it needs a re-draft">
+          <p className="min-w-0 whitespace-pre-wrap wrap-anywhere text-muted-foreground">
+            {failure || (template ? "Every LLM step failed, so the template fallback wrote this draft." : "The engine did not record a reason.")}
+          </p>
+          <p className="text-[0.8125rem] text-ink-3">Edit the draft or ask for a re-draft. It cannot be approved as it is.</p>
+        </Panel>
+      ) : null}
 
       <ReviewActions
         id={d.outreach_id}
@@ -206,7 +247,10 @@ export async function DraftDetail({ id, mode }: { id: string; mode: "page" | "pa
       >
         <Panel title="Why this person, why now">
           <dl className="space-y-3">
-            <Fact term="Angle" value={d.angle} />
+            <Fact term="Angle" value={idWords(d.angle)} />
+            <Fact term="Angle basis" value={d.angle_basis} />
+            <Fact term="Account type" value={idWords(d.account_type)} />
+            <Fact term="Product category" value={idWords(d.product_category)} />
             <Fact term="Trigger" value={d.trigger} />
             <ClayTriggerFact trigger={d.clay_trigger} source={d.clay_trigger_source} date={d.clay_trigger_date} />
             <Fact term="Pain point" value={d.pain_point} />
@@ -261,7 +305,11 @@ export async function DraftDetail({ id, mode }: { id: string; mode: "page" | "pa
           <Panel title="Quality">
             <p className={template ? "flex items-center gap-1.5 font-medium text-danger" : ""}>
               {template ? <TriangleAlert className="size-4" aria-hidden /> : null}
-              {template ? "Drafted by the template fallback, not an LLM" : `Drafted by ${d.llm_provider ?? "unknown"}`}
+              {template
+                ? "Drafted by the template fallback, not an LLM"
+                : gate
+                  ? `Not drafted. The ${gate} gate stopped it before any LLM call.`
+                  : `Drafted by ${d.llm_provider ?? "unknown"}`}
             </p>
             <dl>
               <Fact term="Risk notes" value={d.risk_notes} />

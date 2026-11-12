@@ -9,8 +9,9 @@ The schema lives in ../db/schema.sql. Read it before writing any query.
 
 ## Data rules (hard)
 - Never create, alter or drop tables, views or functions from app code. If a feature needs schema work, stop and give me the SQL.
-- Read from: v_review_queue, v_accounts, v_sync_health, ops, digest_ops, sync_ops, config_versions, console_events, contacts, v_crm_status, v_hubspot_runs, v_hubspot_quarantine.
-- Write ONLY through Server Actions that call gtm_review(), gtm_veto_account(), gtm_save_config(). Never INSERT, UPDATE or DELETE directly.
+- Read from: v_review_queue, v_accounts, v_sync_health, ops, digest_ops, sync_ops, config_versions, console_events, contacts, v_crm_status, v_hubspot_runs, v_hubspot_quarantine, v_outreach_blocks.
+- Write ONLY through Server Actions that call gtm_review(), gtm_reject(), gtm_veto_account(), gtm_save_config(). Never INSERT, UPDATE or DELETE directly.
+- gtm_reject() is called from app/(console)/queue/reject-action.ts (Sprint 14). It is a separate file because queue/actions.ts must stay byte-identical to the Sprint 10 guide (scripts/s10_extract_console_files.mjs --check).
 - Only use the sql tagged template from lib/db.ts. Never concatenate SQL strings.
 - bigint and count(*) arrive as strings: cast with ::int in SQL. timestamptz arrives as Date: convert to ISO strings before passing to Client Components.
 - DB access only in Server Components and Server Actions. Never import lib/db.ts from a "use client" file.
@@ -27,7 +28,7 @@ The schema lives in ../db/schema.sql. Read it before writing any query.
 
 ## UI rules
 - Mobile first: every screen must work at 390 px wide. Approvals happen on a phone.
-- shadcn/ui + Tailwind. Calm, dense ops look. Status colors: pending amber, edited blue, approved green, rejected gray, sent violet, superseded gray with strikethrough.
+- shadcn/ui + Tailwind. Calm, dense ops look. Status colors: pending amber, edited blue, approved green, rejected gray, sent violet, superseded gray with strikethrough, needs re-draft orange.
 - Show database error strings verbatim in a toast (they are written to be readable).
 - No em dashes in any UI text.
 

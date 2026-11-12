@@ -56,6 +56,7 @@
   --color-state-rejected: var(--state-rejected);     --color-state-rejected-tint: var(--state-rejected-tint);
   --color-state-sent: var(--state-sent);             --color-state-sent-tint: var(--state-sent-tint);
   --color-state-superseded: var(--state-superseded);
+  --color-state-redraft: var(--state-redraft);       --color-state-redraft-tint: var(--state-redraft-tint);
   --color-danger: var(--danger);                     --color-danger-tint: var(--danger-tint);
   --color-meter-track: var(--meter-track);
   --color-meter-fill: var(--meter-fill);
@@ -94,6 +95,7 @@
   --state-rejected: #555C66;   --state-rejected-tint: #E8EAED;
   --state-sent: #5A3BB5;       --state-sent-tint: #ECE6FA;
   --state-superseded: #8A9099; /* always with line-through, no tint */
+  --state-redraft: #9A3B00;    --state-redraft-tint: #FCE6D8;   /* needs_redraft (Sprint 14), 5.8:1 */
   --danger: #B42318;           --danger-tint: #FBE7E5;
 
   /* score meter: one neutral ramp, never state colors */
@@ -145,6 +147,7 @@
   --state-rejected: #AAB1BA;   --state-rejected-tint: #2C3137;
   --state-sent: #C1B0FF;       --state-sent-tint: #2A2343;
   --state-superseded: #7E8690;
+  --state-redraft: #FFA574;    --state-redraft-tint: #40261A;   /* needs_redraft (Sprint 14), 7.2:1 */
   --danger: #FF9C91;           --danger-tint: #3D1F1C;
 
   --meter-track: #343A41;
