@@ -37,6 +37,10 @@ const sql14 = fs.readFileSync('db/s14_engine_fixes.sql', 'utf8');
 await db.exec(sql14);
 await db.exec(sql14);
 check('migration runs twice without error', true);
+const sqlPatch = fs.readFileSync('db/s14_patch_blocks.sql', 'utf8');
+await db.exec(sqlPatch);
+await db.exec(sqlPatch);
+check('patch migration (s14_patch_blocks.sql) runs twice without error', true);
 
 check('needs_redraft is a valid status', (await err(`update outreach_queue set approval_status='needs_redraft' where outreach_id='o_acc'`)) === '');
 check('approve from needs_redraft is refused with a clear message',
@@ -78,6 +82,15 @@ const rv = (await q(`select * from v_review_queue where outreach_id='o_new'`))[0
 check('v_review_queue exposes the new columns', rv.angle_basis === 'demo CTA on homepage', Object.keys(rv).slice(-4));
 const va = (await q(`select account_id, block_reason from v_accounts where account_id in ('a_old','a_ctc') order by 1`));
 check('v_accounts shows block_reason', va[1].block_reason === 'draft_rejected_account' && va[0].block_reason === null, va);
+
+// Sprint 14 patch (db/s14_patch_blocks.sql): an engine gate row has scope 'pitch' but no reviewed_at.
+// It must still block its account, with pitch_at taken from run_date.
+await db.exec(`
+insert into accounts (account_id, company_name, domain, status, clay_trigger_date) values ('a_gate', 'GateNoAngle', 'g.io', 'contact_found', null);
+insert into outreach_queue (outreach_id, account_id, contact_id, company_name, approval_status, reject_scope, reviewed_at, run_date, llm_provider)
+values ('o_gate', 'a_gate', 'c10', 'GateNoAngle', 'rejected', 'pitch', null, now(), 'gate:no_angle');`);
+const gate = (await q(`select reason, pitch_at from v_outreach_blocks where account_id = 'a_gate'`))[0];
+check('patch: a gate row (scope pitch, no reviewed_at) blocks its account', gate && gate.reason === 'draft_rejected_pitch' && gate.pitch_at !== null, gate);
 
 console.log(failed ? `${failed} check(s) failed` : 'All checks passed');
 process.exit(failed ? 1 : 0);
