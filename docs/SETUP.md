@@ -92,7 +92,15 @@ Then:
 | 4 | Personal GTM Engine | `ops` last row | `contacts_written` and `outreach_drafts_written` above 0 |
 | 5 | You, in the console | **Queue** | New drafts under Review. Approve, edit or reject; send by hand; **Mark sent** |
 
-Since Sprint 14, steps 1 to 4 are one click: open `GTM Run` and execute it. It calls GTM Neon Sync, the Engine, GTM Contact Finder, the Engine again and GTM Neon Sync, each waiting for the one before. If it stops with "N accounts still queued for contacts. Run GTM Run again.", that is the designed signal: run it once more. A manual run of `GTM Run` uses the draft versions of the three called workflows (n8n 2.3 and later); on an older n8n, publish the Engine and Contact Finder first (they have no schedule, so publishing only makes them callable).
+Since Sprint 14, steps 1 to 4 are one click: open `GTM Run` and execute it. It calls GTM Neon Sync, the Engine, GTM Contact Finder, the Engine again and GTM Neon Sync, each waiting for the one before. A manual run of `GTM Run` uses the draft versions of the three called workflows (n8n 2.3 and later); on an older n8n, publish the Engine and Contact Finder first (they have no schedule, so publishing only makes them callable).
+
+### One batch: GTM Run, Clay, GTM Run (ADR-112)
+
+Clay stays outside `GTM Run` (the Free plan has no API run for the table), so one batch takes two runs:
+
+1. **GTM Run** finds contacts. Contact Finder takes `contact.max_accounts_per_run` (10) accounts per run and the contact queue is topped up to that cap, so a queue left over is normal. The last node returns `ok_queue_draining` with a `next_step`; it fails only when accounts are queued and neither engine pass wrote a contact (check GTM Contact Finder).
+2. **Clay** finds the emails: run `Clay Email Queue`, run the waterfall in the Clay table Contacts Email by selection, export the CSV, then run `Clay Email Import`.
+3. **GTM Run** again drafts. A contact still without a verified email waits `outreach.await_email_days` (3) days after it was found, then it can get a LinkedIn draft.
 
 ### Sprint 14 config keys
 
@@ -103,6 +111,7 @@ Add these in the console (**Config**, save with a new rev). Every key has the sa
 | `outreach.min_buyer_score` | 60 | Contacts whose title scores below this buying-role score get no draft |
 | `outreach.max_contact_age_days` | 30 | Contacts found longer ago than this get no draft |
 | `outreach.small_team_no_trigger` | 10 | Accounts under this many people need a valid trigger before a draft |
+| `outreach.await_email_days` | 3 | A contact without a verified email waits this many days after it was found (for the Clay email step) before it can get a LinkedIn draft |
 | `outreach.gate_overrides` | `[]` | `account_id`s that skip the product-overlap and hardware gates; add one, then Re-draft |
 | `priority.region_bonus` | 5 | Points added to the sort order (not to `final_score`) for accounts in `priority.regions` |
 | `priority.regions` | EU countries, UK, Norway, Iceland, Liechtenstein, Switzerland | Lower-case country names that get the region bonus |

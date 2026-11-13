@@ -768,6 +768,13 @@ Consolidated from every ADR in the project docs (SPEC, Roadmap, Sprint 1 to 7 gu
 **Trade-offs / consequences:** Moby-type accounts (4 people, demo-led, approved on Oct 29) are skipped until a trigger appears; 11 of the 25 Nov 3 accounts are under 10 people.
 **Source:** Sprints/Sprint 14 - Engine Fixes Guide.md (ADR table)
 
+## ADR-112: Clay email enrichment stays a manual step between two GTM Runs
+**Status:** Accepted
+**Context:** 7.3 acceptance runs of 2026-11-12 and 2026-11-13 (Sprint 14 patch). Alternative considered: chain Clay into GTM Run. Rejected: the Clay Free plan has no API or webhook run for the table, rows are pulled by a source re-submit and results come back through a CSV export.
+**Decision:** Keep `Clay Email Queue`, the Clay waterfall and `Clay Email Import` outside `GTM Run`. One cycle is GTM Run (finds contacts) -> Clay email chain -> GTM Run (drafts). A contact without a verified email waits `outreach.await_email_days` (default 3) before it can become a LinkedIn draft, so fresh contacts wait for their email.
+**Trade-offs / consequences:** Two GTM Runs and about 10 minutes of Clay clicks per batch. Drafts arrive one run later, with verified emails (9 of 9 on 2026-11-13).
+**Source:** Sprints/Sprint 14 Patch - Engine Fixes.md (ADR-112)
+
 ---
 
 ## Notes

@@ -55,6 +55,8 @@ const rolesExclude = (C.roles_exclude || []).map(s => String(s).toLowerCase());
 const minBuyer = Number(O.min_buyer_score ?? 60);
 const maxAgeDays = Number(O.max_contact_age_days ?? 30);
 const smallTeam = Number(O.small_team_no_trigger ?? 10);
+// S14 patch (ADR-112): a contact without a verified email waits this many days for the Clay email step before a LinkedIn draft.
+const awaitDays = Number(O.await_email_days ?? 3);
 const regionBonusPts = Number(P.region_bonus ?? 5);
 const regions = (Array.isArray(P.regions) ? P.regions : EU_UK).map(s => String(s).toLowerCase());
 const regionBonus = (a) => regions.includes(String((a || {}).country || '').trim().toLowerCase()) ? regionBonusPts : 0;
@@ -84,7 +86,7 @@ for (const r of queue) {
 const accounts = {};
 for (const a of safeAll('Fetch Accounts For Outreach')) if (a && a.account_id) accounts[String(a.account_id)] = a;
 
-const sk = { account: 0, rejected: 0, role: 0, channel: 0, per_account: 0, blocked: 0, blocked_by_reason: {}, stale: 0, low_buyer_role: 0, small_no_trigger: 0 };
+const sk = { account: 0, rejected: 0, role: 0, channel: 0, per_account: 0, blocked: 0, blocked_by_reason: {}, stale: 0, low_buyer_role: 0, small_no_trigger: 0, awaiting_email: 0 };
 const pairs = [];
 // Sprint 14 order: newest accounts first (Fix 2), then account score plus region bonus (Fix 10, ADR-109),
 // then buying role (Fix 3), then contact score. The per-company cap keeps the strongest buyer.
@@ -129,6 +131,9 @@ for (const c of contacts) {
   else if (String(c.linkedin_url || '').trim()) { channel = 'linkedin_manual'; if (emailOk) flags.push('email_' + (emailStatus || 'unknown') + '_not_used'); }
   else if (emailOk && allowGuessed) { channel = 'email'; flags.push('email_unverified'); }
   if (!channel) { sk.channel++; continue; }
+  // S14 patch (ADR-112): no verified email yet and found less than awaitDays ago: no row, re-checked next run,
+  // so Clay Email Queue can find the email before the contact falls back to a LinkedIn draft.
+  if (channel !== 'email' && awaitDays > 0 && !isNaN(foundAt) && (Date.now() - foundAt) < awaitDays * 86400000) { sk.awaiting_email++; continue; }
 
   liveByAccount[String(a.account_id)] = (liveByAccount[String(a.account_id)] || 0) + 1;
   pairs.push({ json: {
@@ -147,4 +152,4 @@ for (const c of contacts) {
   } });
   if (pairs.length >= cap) break;
 }
-return finish(pairs, { skipped_account_not_done: sk.account, skipped_account_rejected: sk.rejected, skipped_per_account_cap: sk.per_account, skipped_role: sk.role, skipped_no_safe_channel: sk.channel, skipped_blocked: sk.blocked, blocked_by_reason: sk.blocked_by_reason, skipped_stale: sk.stale, skipped_low_buyer_role: sk.low_buyer_role, skipped_small_no_trigger: sk.small_no_trigger, drafted_today_before: draftedToday });
+return finish(pairs, { skipped_account_not_done: sk.account, skipped_account_rejected: sk.rejected, skipped_per_account_cap: sk.per_account, skipped_role: sk.role, skipped_no_safe_channel: sk.channel, skipped_blocked: sk.blocked, blocked_by_reason: sk.blocked_by_reason, skipped_stale: sk.stale, skipped_low_buyer_role: sk.low_buyer_role, skipped_small_no_trigger: sk.small_no_trigger, skipped_awaiting_email: sk.awaiting_email, drafted_today_before: draftedToday });

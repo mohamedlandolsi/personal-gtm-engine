@@ -41,9 +41,13 @@ const eligible = accountRows.filter(r =>
 );
 
 // Do not queue accounts whose results are already pasted. Queue and rescore must never touch the same account in one run.
+// S14 patch: top the queue up to the cap instead of adding the cap every pass. Contact Finder takes
+// contact.max_accounts_per_run per run, and two engine passes per GTM Run used to add twice that.
+const alreadyQueued = accountRows.filter(r => String(r.contact_status || '').trim() === 'queued' && String(r.status || '') !== 'rejected').length;
+const slots = Math.max(0, capAccounts - alreadyQueued);
 const queued = eligible.filter(r => !resultDomains.has(String(r.domain || '').toLowerCase()))
   .sort((a, b) => (Number(b.final_score || 0) + regionBonus(b)) - (Number(a.final_score || 0) + regionBonus(a)))
-  .slice(0, capAccounts).map(r => ({
+  .slice(0, slots).map(r => ({
   json: {
     queued_at: new Date().toISOString(),
     account_id: r.account_id,
@@ -64,5 +68,5 @@ const inFlight = accountRows.filter(r =>
   !seenAccountDomains.has(String(r.domain || '').toLowerCase())
 );
 base.stats.all_qualified = inFlight;
-base.stats.contacts = { queued: queued.length, discovered: 0, written: 0, eligible: eligible.length, rejected: {} };
+base.stats.contacts = { queued: queued.length, discovered: 0, written: 0, eligible: eligible.length, already_queued: alreadyQueued, rejected: {} };
 return queued.concat([{ json: base }]);

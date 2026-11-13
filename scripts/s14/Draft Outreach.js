@@ -347,6 +347,13 @@ const assemble = (p, d) => {
   o.message_draft = 'Hi ' + firstName(p) + ',\n\n' + o.first_line + ' ' + o.body_rest + '\n\n' + CTA + '\n\n' + SENDER;
   return o;
 };
+// S14 patch: words of the configured "Built ..." proofs that identify the claim (not filler).
+const PROOF_STOP = new Set('built with and the for every person approving message own my a an in of to'.split(' '));
+const PROOF_KEYS = PROOFS.filter(x => /^built /i.test(x)).map(x => new Set((x.toLowerCase().match(/[a-z0-9]+/g) || []).filter(w => w.length >= 3 && !PROOF_STOP.has(w))));
+const builtMatchesProof = (txt) => txt.split(/(?<=[.!?])\s+|\n/).filter(s => /\b(i|we)('ve| have)? built\b/i.test(s)).every(s => {
+  const ws = new Set(s.toLowerCase().match(/[a-z0-9]+/g) || []);
+  return PROOF_KEYS.some(k => [...k].filter(w => ws.has(w)).length >= 2);
+});
 const HEDGE = /\b(likely|may|might|could|can|if|perhaps|probably|often|curious|wonder|guess|assume|typically|usually|tends?|sometimes|whether)\b|\?/i;
 const ASSERT = /\b(?:your|the|their)\s+(?:[a-z-]+\s+){0,2}(?:team|group|crew|engineers|reps|staff)\s+(?:must|has to|have to|is forced|are forced|spends?|wastes?|struggles?|juggles?|is juggling|are juggling)\b|\bforc(?:es|ing) (?:your|the|their)\b/i;
 const validate = (p, o) => {
@@ -369,7 +376,9 @@ const validate = (p, o) => {
   if (!(fl.includes(String(p.company_name || '').toLowerCase()) || fl.includes(displayName(p).toLowerCase()) || (stem && fl.includes(stem)))) bad.push('first_line_no_company');
   if (wc(o.email_subject) < 3 || o.email_subject.length > 80) bad.push('subject');
   if (/\b(your|their) (n8n|engine)\b/i.test(all)) bad.push('wrong_perspective');
-  if (/\b(i|we)('ve| have)? built\b/i.test(all) && !PROOFS.filter(x => /^built /i.test(x)).map(x => x.toLowerCase().split(/\s+/).slice(1, 4).join(' ')).some(k => lower0.includes(k))) bad.push('overclaims_built');
+  // S14 patch: the prompt asks to PARAPHRASE the proof, so an exact 3-word match was too strict. A "built" sentence
+  // now passes when it names at least 2 distinctive words of a configured "Built ..." proof (outbound, engine, n8n, ...).
+  if (/\b(i|we)('ve| have)? built\b/i.test(all) && !builtMatchesProof(all)) bad.push('overclaims_built');
   if (/\b(in half|twice|double|doubling|triple|halve|halving|\dx)\b/i.test(all)) bad.push('quantified_claim');
   if (/\bjoint (workflow|project|solution|venture|effort)\b|\bpartner(ship)? with (you|your)\b/i.test(all)) bad.push('partnership_pitch');
   // an unhedged statement about their team's problems is a guess presented as a fact
@@ -501,7 +510,9 @@ for (let pi = 0; pi < pairs.length; pi++) {
   first = false;
 
   const factsLevel = String(p.clay_summary || '').trim() ? 'clay' : (p.__site ? 'site' : 'none');
-  p.__terms = productTerms(p);
+  // S14 patch: a product word the chosen ANGLE itself uses ("accounts" for an accounts-receivable tool) is the angle's
+  // vocabulary, not their product. Dropping it here also removes it from PRODUCT_TERMS in the prompt.
+  p.__terms = productTerms(p).filter(t => !termRe(t).test(String(ANGLES[p.__angle.id] || '')));
 
   let row = null, provider = 'template', calls = 0, fails = 0;
   const errs = [];
