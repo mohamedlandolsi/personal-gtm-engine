@@ -1,8 +1,8 @@
 # Personal GTM Engine
 
-An outbound engine built in n8n that finds B2B startups likely to need GTM automation, verifies who their founders are, writes a grounded first message for each, and puts every draft in a private review console. It runs on free tiers only and never sends anything by itself.
+[![ci](https://github.com/mohamedlandolsi/personal-gtm-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/mohamedlandolsi/personal-gtm-engine/actions/workflows/ci.yml)
 
-> **Demo:** [3-minute Loom walkthrough](LOOM_LINK_HERE)
+An outbound engine built in n8n that finds B2B startups likely to need GTM automation, verifies who their founders are, writes a grounded first message for each, and puts every draft in a private review console. It runs on free tiers only and never sends anything by itself.
 
 ## What it does
 
@@ -13,8 +13,9 @@ An outbound engine built in n8n that finds B2B startups likely to need GTM autom
 | **Score** | An explainable 0-100 account score with its breakdown and reasons |
 | **Enrich** | Tech stack and hiring signals from the company's own website, then a metered Clay layer: a structured AI summary and a dated trigger (hiring, funding or news) per account |
 | **Find people** | Founders read from the company's YC page (verified by website domain), Tavily search as a gated fallback, emails through Clay's Work Email waterfall |
-| **Draft** | A LinkedIn note, a long message and three follow-ups, written by a Groq/Gemini fallback chain and checked by a rule-based validator |
-| **Review** | A private Next.js console on Vercel, backed by Neon Postgres: approve, edit, reject or veto, then send by hand |
+| **Gate and pick the pitch** | Fixed rules before any LLM call: skip accounts you rejected or vetoed, weak buying roles and small teams with no trigger; reject companies that sell GTM tooling or hardware; then code picks 1 of 6 angles from the homepage and the trigger (Sprint 14) |
+| **Draft** | A LinkedIn note, a long message and three follow-ups for that angle, written by a Groq/Gemini fallback chain and checked by a rule-based validator. A draft that still fails is parked in `needs_redraft`, outside Review |
+| **Review** | A private Next.js console on Vercel, backed by Neon Postgres: approve, edit, reject with a scope (contact, pitch or account) or veto, then send by hand |
 | **CRM** | Approved accounts land in HubSpot Free as a company, a contact and a deal (proven live, idempotent). Notes, tasks, the move to Contacted and the reply pull are built and pass 29 offline checks, pending the first real send. Details under Known limits. |
 
 Clay layer: one structured AI call per account (1.0 credit, was 2.8), a signal set (jobs, news, funding) for about 0.9 credit, and the Work Email waterfall with Conservative validation at about 0.46 credit per verified email. n8n meters every batch through Clay's Public API.
@@ -25,7 +26,8 @@ flowchart LR
     B --> C["Website enrichment"]
     C --> D["Clay layer: summary, trigger, email"]
     D --> E["Founder lookup: YC page, then Tavily"]
-    E --> F["LLM draft + validator"]
+    E --> X["Gates + angle (code)"]
+    X --> F["LLM draft + validator"]
     F --> G[("Neon")]
     G --> H["Console review"]
     H --> I{{"Human sends by hand"}}
@@ -58,6 +60,20 @@ Numbers come from the engine's own telemetry in Neon (`ops`, `outreach_queue`, `
 | Failure path | Bad config gives 7 readable HubSpot errors, run stays green, 0 quarantined |
 | Offline SQL checks for the HubSpot layer | 29 of 29 |
 | Monthly cost | $0 |
+
+### Sprint 14 acceptance runs (November 12 and 13, 2026)
+
+Sprint 14 put fixed rules in front of the LLM after a review found that 4 of 7 "approved" drafts should not go out. The first runs with those rules:
+
+| Metric | Value |
+|---|---|
+| Accounts skipped because you rejected or vetoed them | 12, exactly as the dry run predicted |
+| Drafts written | 6 pending, plus 3 gate rows (1 GTM-tool seller, 2 with no fitting angle), 0 LLM calls on gated accounts |
+| Template or invalid drafts that reached Review | 0 |
+| Drafts to technical contacts, blocked accounts or teams under 10 without a trigger | 0 |
+| Founders found, then verified by the Clay email waterfall | 9 of 9 |
+| LLM failure rate | 0.63 on the first run. 8 of the 10 failures were two validator false positives, fixed in the Sprint 14 patch (commit `d0d8c7b`) |
+| Messages sent | 8, each approved in the console and sent by hand |
 
 ## Screenshots
 
@@ -112,6 +128,8 @@ Numbers come from the engine's own telemetry in Neon (`ops`, `outreach_queue`, `
 | Deterministic gates before LLMs | Filters, scoring, tool detection, product-term guard and validation are plain code. The LLM only writes text from facts it is given. |
 | Fallback chains | 3 Groq models, then Gemini, then a deterministic template. A draft row is always written. |
 | Explainable scoring | Every account carries `score_breakdown`, `why_match` and `red_flags`. |
+| Code picks the pitch | A fixed angle library (hiring bridge, lead delivery, client reporting, demo brief, booking follow-up, signup activation) chosen from evidence on the homepage or a dated trigger. The LLM only writes it (ADR-107). |
+| Rejections teach the engine | A reject carries a scope. The Neon view `v_outreach_blocks` turns account and pitch rejections into skips on the next run, so the same company is not pitched twice (ADR-103). |
 | Idempotent runs | Dedupe ledgers in n8n Data Tables, and drafts written to Neon through `gtm_insert_draft()`, mean a re-run never duplicates rows or messages. |
 | Telemetry first | Every engine and sync run is logged and shown on the console's Runs page. Debugging starts there. |
 | Human in the loop | The system drafts. A person approves in the console and sends by hand. The console writes only through `gtm_review`, `gtm_veto_account` and `gtm_save_config`. |
@@ -120,7 +138,7 @@ Numbers come from the engine's own telemetry in Neon (`ops`, `outreach_queue`, `
 | Idempotent CRM sync | Neon link table first, natural-key search second, unique `gtm_account_key` on companies: a re-run writes nothing and a lost link is adopted, not duplicated (ADR-094). |
 | Clear ownership | The engine owns the company and contact fields it sends; HubSpot owns the deal stage after creation (ADR-095). |
 
-Decision log: [docs/ADR.md](docs/ADR.md) (87 architecture decision records). Original design: [docs/SPEC.md](docs/SPEC.md).
+Decision log: [docs/ADR.md](docs/ADR.md) (97 architecture decision records). Original design: [docs/SPEC.md](docs/SPEC.md).
 
 ## CRM sync, how it stays correct
 
@@ -148,7 +166,8 @@ Decision log: [docs/ADR.md](docs/ADR.md) (87 architecture decision records). Ori
 ## Repository layout
 
 ```text
-workflows/                    sanitized n8n exports (import these)
+.github/workflows/ci.yml      console types and lint, node bodies, SQL tests, secret and email scan
+workflows/                    sanitized n8n exports (import these; see Known limits)
   personal_gtm_engine.json    discovery, scoring, enrichment, contacts, drafting
   gtm_contact_finder.json     founder lookup: YC pages, then Tavily
   gtm_neon_sync.json          every 15 min: console decisions to Sheets, Sheets mirrored into Neon
@@ -162,13 +181,16 @@ workflows/                    sanitized n8n exports (import these)
   retired/                    workflows replaced by the console (Discord digest)
 gtm-console/                  Next.js review console (see gtm-console/README.md)
 db/schema.sql                 Neon tables, views and functions (includes the HubSpot layer)
-db/s13_*.sql                  Sprint 13 migrations for databases created before it
+db/s13_*.sql, db/s14_*.sql    migrations for databases created before Sprint 13 / 14
 config/config.example.json    the full runtime config (seeded from the sheet, then edited in the console)
 docs/ARCHITECTURE.md          diagrams, workflow map and the daily loop
 docs/SHEET_SCHEMA.md          every tab, its writer and reader
 docs/SETUP.md                 step-by-step install
 docs/ADR.md                   architecture decisions
 docs/SPEC.md                  original specification
+scripts/s14/                  Sprint 14 Code node bodies, as live in n8n, plus build and check scripts
+scripts/s13_sql_test.mjs      offline SQL tests (PGlite), also s14_sql_test.mjs
+scripts/check_*.mjs           CI checks: node bodies compile, no secrets or real emails
 scripts/sanitize_workflows.py strips IDs, emails and secrets from n8n exports
 .env.example                  environment variables the workflows read
 ```
@@ -180,12 +202,15 @@ scripts/sanitize_workflows.py strips IDs, emails and secrets from n8n exports
 3. Set the variables from `.env.example` in your n8n container.
 4. Import the 8 core files in `workflows/`, then reconnect credentials (Google service account, Neon, Tavily, Clay, Discord), the sheet and the Data Tables. Publish `GTM Neon Sync`. The 2 HubSpot workflows are optional: [docs/SETUP.md](docs/SETUP.md) section 11.
 5. Deploy `gtm-console/` to Vercel (see [gtm-console/README.md](gtm-console/README.md)).
-6. Run: Engine, then Contact Finder, then Engine again, then review in the console.
+6. Run one batch (ADR-112): `GTM Run`, then the Clay email step (`Clay Email Queue`, the waterfall in Clay, `Clay Email Import`), then `GTM Run` again, then review in the console.
 
 Details and expected outputs: [docs/SETUP.md](docs/SETUP.md)
 
 ## Known limits
 
+- The files in `workflows/` are the Sprint 13 exports. The Sprint 14 node bodies are in `scripts/s14/` and the live workflows are ahead of the exports until the next export (`docs/SETUP.md` section 10).
+- The Clay email step is manual between two `GTM Run`s, because the Clay Free plan has no API run for a table (ADR-112). Contacts without a verified email wait 3 days for it before they can get a LinkedIn draft.
+- Angle variety is still low: in the first Sprint 14 run, 5 of 6 drafts used the demo-brief angle, the trade-off ADR-107 accepted for grounded pitches.
 - The engine runs on demand; GTM Neon Sync (15 min) and GTM HubSpot Sync (30 min) run on schedules while n8n is on.
 - Two stores: accounts and contacts live in Sheets, drafts and config in Neon, bridged by a 15-minute sync. Moving everything to one store targets Neon (ADR-090).
 - HubSpot lags Neon by up to 30 minutes and syncs only while n8n runs on the laptop. Notes, tasks, the move to Contacted and the reply pull are built and pass the offline SQL test (29 checks) but are not yet proven live: they wait for the first real send (tests T8, T9). Replies are recorded by moving the deal stage by hand.

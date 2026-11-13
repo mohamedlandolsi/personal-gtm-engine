@@ -190,7 +190,12 @@
       "max_wait_s": 20,
       "groq_model": "openai/gpt-oss-120b",
       "gemini_model": "gemini-3.8-flash"
-    }
+    },
+    "min_buyer_score": 60,
+    "max_contact_age_days": 30,
+    "small_team_no_trigger": 10,
+    "await_email_days": 3,
+    "gate_overrides": []
   },
   "digest": {
     "enabled": false
@@ -314,5 +319,43 @@
         "workflow-automation"
       ]
     }
+  },
+  "priority": {
+    "region_bonus": 5,
+    "regions": [
+      "austria",
+      "belgium",
+      "bulgaria",
+      "croatia",
+      "cyprus",
+      "czechia",
+      "czech republic",
+      "denmark",
+      "estonia",
+      "finland",
+      "france",
+      "germany",
+      "greece",
+      "hungary",
+      "ireland",
+      "italy",
+      "latvia",
+      "lithuania",
+      "luxembourg",
+      "malta",
+      "netherlands",
+      "poland",
+      "portugal",
+      "romania",
+      "slovakia",
+      "slovenia",
+      "spain",
+      "sweden",
+      "united kingdom",
+      "norway",
+      "iceland",
+      "liechtenstein",
+      "switzerland"
+    ]
   }
 }
