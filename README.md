@@ -15,7 +15,7 @@ An outbound engine built in n8n that finds B2B startups likely to need GTM autom
 | **Find people** | Founders read from the company's YC page (verified by website domain), Tavily search as a gated fallback, emails through Clay's Work Email waterfall |
 | **Draft** | A LinkedIn note, a long message and three follow-ups, written by a Groq/Gemini fallback chain and checked by a rule-based validator |
 | **Review** | A private Next.js console on Vercel, backed by Neon Postgres: approve, edit, reject or veto, then send by hand |
-| **CRM** | Every approved account lands in HubSpot Free as a company, a contact and a deal; sending logs a note and a follow-up task; deal stages you move in HubSpot flow back to the console |
+| **CRM** | Approved accounts land in HubSpot Free as a company, a contact and a deal (proven live, idempotent). Notes, tasks, the move to Contacted and the reply pull are built and pass 29 offline checks, pending the first real send. Details under Known limits. |
 
 Clay layer: one structured AI call per account (1.0 credit, was 2.8), a signal set (jobs, news, funding) for about 0.9 credit, and the Work Email waterfall with Conservative validation at about 0.46 credit per verified email. n8n meters every batch through Clay's Public API.
 
@@ -37,7 +37,7 @@ Full diagrams and the daily loop: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
 ## Results from the live runs
 
-Numbers come from the engine's own telemetry in Neon (`ops`, `outreach_queue`, `console_events`, `sync_ops`, `hubspot_events`), October 2026.
+Numbers come from the engine's own telemetry in Neon (`ops`, `outreach_queue`, `console_events`, `sync_ops`, `hubspot_events`, `hubspot_links`), October 2026. The HubSpot rows also draw on the Sprint 13 test runs, with HubSpot read back through Claude's connector, and on `scripts/s13_sql_test.mjs`.
 
 | Metric | Value |
 |---|---|
@@ -54,6 +54,9 @@ Numbers come from the engine's own telemetry in Neon (`ops`, `outreach_queue`, `
 | Messages sent without approval | 0 (the system never sends; the console allows **Mark sent** only on approved drafts) |
 | Synced to HubSpot | 7 companies, 7 contacts, 7 deals |
 | Second run writes | 0 (the Neon link table and outbox make a re-run a no-op) |
+| Crash recovery | Deleted link adopted, not duplicated (0 duplicates, 7 of 7 companies) |
+| Failure path | Bad config gives 7 readable HubSpot errors, run stays green, 0 quarantined |
+| Offline SQL checks for the HubSpot layer | 29 of 29 |
 | Monthly cost | $0 |
 
 ## Screenshots
@@ -67,6 +70,10 @@ Numbers come from the engine's own telemetry in Neon (`ops`, `outreach_queue`, `
 **HubSpot**: the deals board after the first sync, one deal per approved account.
 
 ![HubSpot deals board](screenshots/hubspot-deals.png)
+
+**CRM status in the console**: the draft page shows Company, Contact and Deal links plus the HubSpot stage.
+
+![Console draft page with CRM links](screenshots/console-crm.png)
 
 **Workflows in n8n**, grouped in folders.
 
@@ -110,8 +117,19 @@ Numbers come from the engine's own telemetry in Neon (`ops`, `outreach_queue`, `
 | Human in the loop | The system drafts. A person approves in the console and sends by hand. The console writes only through `gtm_review`, `gtm_veto_account` and `gtm_save_config`. |
 | Strangler migration | Neon is the system of record for drafts and config. Accounts and contacts still live in Sheets, mirrored into Neon every 15 minutes; their planned move targets Neon, while HubSpot holds only approved work. |
 | Outbox, not scripts | Neon views compute exactly what HubSpot is missing, n8n carries it, Neon functions record every result. No Code nodes in the CRM sync. |
+| Idempotent CRM sync | Neon link table first, natural-key search second, unique `gtm_account_key` on companies: a re-run writes nothing and a lost link is adopted, not duplicated (ADR-094). |
+| Clear ownership | The engine owns the company and contact fields it sends; HubSpot owns the deal stage after creation (ADR-095). |
 
 Decision log: [docs/ADR.md](docs/ADR.md) (87 architecture decision records). Original design: [docs/SPEC.md](docs/SPEC.md).
+
+## CRM sync, how it stays correct
+
+| Part | How |
+|---|---|
+| Neon outbox | Neon views list only what HubSpot is missing or what changed; n8n carries each row and Neon functions record the result. |
+| Find-or-create | The `HubSpot Upsert Record` sub-workflow updates by id, else searches the natural key and adopts, else creates. The `hubspot_links` table and a unique `gtm_account_key` stop duplicates. |
+| Guardrails | A row is quarantined after 3 failures, `hubspot.enabled` in config is a kill switch, and every contact carries a GDPR legal basis (ADR-102). |
+| Claude on top | Claude's HubSpot connector is a read-mostly operator layer for pipeline reviews and audits, never the sync (ADR-098, ADR-101). |
 
 ## Stack
 
@@ -168,9 +186,9 @@ Details and expected outputs: [docs/SETUP.md](docs/SETUP.md)
 
 ## Known limits
 
-- Runs on demand. Scheduling needs n8n to be running, which is not worth an always-on host at this volume.
+- The engine runs on demand; GTM Neon Sync (15 min) and GTM HubSpot Sync (30 min) run on schedules while n8n is on.
 - Two stores: accounts and contacts live in Sheets, drafts and config in Neon, bridged by a 15-minute sync. Moving everything to one store targets Neon (ADR-090).
-- HubSpot lags Neon by up to 30 minutes and syncs only while n8n runs on the laptop. Replies are recorded by moving the deal stage by hand.
+- HubSpot lags Neon by up to 30 minutes and syncs only while n8n runs on the laptop. Notes, tasks, the move to Contacted and the reply pull are built and pass the offline SQL test (29 checks) but are not yet proven live: they wait for the first real send (tests T8, T9). Replies are recorded by moving the deal stage by hand.
 - Founder lookup is strongest for YC companies. Others rely on search with name, company and location gates, and a human check.
 - The product-term guard catches companies that describe their product with repeated words. A product named once can slip through, which the review step catches.
 - Free LinkedIn accounts allow only a handful of personalized connection notes per month, so the daily draft cap is deliberately low.
