@@ -1,0 +1,65 @@
+# Checks that need no secrets: nothing here touches n8n, Neon, Sheets, Clay or HubSpot.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  console:
+    name: Console (types and lint)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gtm-console
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: gtm-console/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      # PageProps and LayoutProps are generated route types (Next 16)
+      - run: npx next typegen
+      - run: npx tsc --noEmit
+      - run: npm run lint
+
+  engine:
+    name: Engine (node bodies and SQL)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: n8n Code node bodies compile
+        run: node scripts/check_node_bodies.mjs
+      - name: Install PGlite outside the repo
+        run: |
+          mkdir -p "$RUNNER_TEMP/pgl" && cd "$RUNNER_TEMP/pgl"
+          npm init -y > /dev/null
+          npm i --no-audit --no-fund @electric-sql/pglite@0.3
+      - name: Sprint 13 SQL test (HubSpot outbox)
+        run: node scripts/s13_sql_test.mjs
+        env:
+          PGLITE_DIR: ${{ runner.temp }}/pgl
+      - name: Sprint 14 SQL test (blocks, reject scope, needs_redraft)
+        run: node scripts/s14_sql_test.mjs
+        env:
+          PGLITE_DIR: ${{ runner.temp }}/pgl
+
+  hygiene:
+    name: Public repo hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: No keys, database passwords or real email addresses
+        run: node scripts/check_public_hygiene.mjs

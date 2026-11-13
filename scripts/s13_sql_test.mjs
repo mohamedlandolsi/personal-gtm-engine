@@ -33,18 +33,18 @@ await q(`select gtm_save_config($1, 'test', 'test')`, [JSON.stringify({ rev: 'r1
 
 await db.exec(`
 insert into accounts (account_id, company_name, domain, website, employee_count, country, linkedin_url, clay_summary, final_score, clay_trigger, status) values
- ('acc1', 'Throxy', 'throxy.com', 'https://throxy.com', 25, 'United Kingdom', 'https://linkedin.com/company/throxy', 'AI SDR <agency> & co', 82, 'Hiring 2 SDRs', 'qualified'),
+ ('acc1', 'Northwind', 'northwind.example', 'https://northwind.example', 25, 'United Kingdom', 'https://linkedin.com/company/northwind-example', 'AI SDR <agency> & co', 82, 'Hiring 2 SDRs', 'qualified'),
  ('acc2', 'Vetoed Co', 'vetoed.io', null, 10, 'Germany', null, null, 70, null, 'rejected'),
  ('acc3', 'NoEmail Ltd', 'noemail.dev', null, null, null, null, null, 75, null, 'qualified');
 insert into contacts (contact_id, account_id, company_name, full_name, title, email, email_status, linkedin_url) values
- ('c1', 'acc1', 'Throxy', 'Bergen Merey', 'CEO', 'Bergen@Throxy.com', 'verified', 'https://linkedin.com/in/bergen'),
+ ('c1', 'acc1', 'Northwind', 'Dana Reyes', 'CEO', 'Dana@Northwind.example', 'verified', 'https://linkedin.com/in/dana-example'),
  ('c2', 'acc2', 'Vetoed Co', 'X Y', 'CTO', 'x@vetoed.io', 'verified', null),
  ('c3', 'acc3', 'NoEmail Ltd', 'Joseph L.', 'Founder', null, 'not_found', 'https://linkedin.com/in/joe');
 insert into outreach_queue (outreach_id, account_id, contact_id, company_name, channel, angle, value_proposition, message_draft, linkedin_note, follow_up_1, approval_status) values
- ('o1', 'acc1', 'c1', 'Throxy', 'linkedin_manual', 'angle A', 'value V', E'Hi Bergen,\\nline 2', 'note', 'fu1 text', 'approved'),
+ ('o1', 'acc1', 'c1', 'Northwind', 'linkedin_manual', 'angle A', 'value V', E'Hi Dana,\\nline 2', 'note', 'fu1 text', 'approved'),
  ('o2', 'acc2', 'c2', 'Vetoed Co', 'email', 'a', 'v', 'msg', 'n', 'f', 'approved'),
  ('o3', 'acc3', 'c3', 'NoEmail Ltd', 'linkedin_manual', 'a3', 'v3', 'msg3', 'n3', '', 'approved'),
- ('o4', 'acc1', 'c1', 'Throxy', 'linkedin_manual', 'a', 'v', 'old', 'n', 'f', 'pending');`);
+ ('o4', 'acc1', 'c1', 'Northwind', 'linkedin_manual', 'a', 'v', 'old', 'n', 'f', 'pending');`);
 
 let rows = await q(`select * from v_hubspot_outbox order by step, local_id`);
 check('first read: only companies are ready (children wait for parents)', rows.every(r => r.step === 1), rows.map(r => r.step));
@@ -55,8 +55,8 @@ check('custom properties present', rows[0].properties.gtm_account_key === 'acc1'
 for (const r of rows) await record(r, 'run1', 'created', 'co_' + r.local_id);
 rows = await q(`select * from v_hubspot_outbox where step = 2 order by local_id`);
 check('contacts appear once their company is linked', rows.length === 2, rows.length);
-check('LinkedIn goes to the built-in hs_linkedin_url by default', rows[0].properties.hs_linkedin_url === 'https://linkedin.com/in/bergen', rows[0].properties);
-check('verified email is the search key, lower-cased', rows[0].key_value === 'bergen@throxy.com', rows[0].key_value);
+check('LinkedIn goes to the built-in hs_linkedin_url by default', rows[0].properties.hs_linkedin_url === 'https://linkedin.com/in/dana-example', rows[0].properties);
+check('verified email is the search key, lower-cased', rows[0].key_value === 'dana@northwind.example', rows[0].key_value);
 check('no email: empty key, so the sub-workflow creates without searching', rows[1].key_value === '' && !('email' in rows[1].properties), rows[1]);
 check('GDPR: contacts carry the HubSpot legal basis (exact option value)', rows.every(r => r.properties.hs_legal_basis === 'Legitimate interest \u2013 prospect/lead'), rows[0].properties.hs_legal_basis);
 check('contact -> company association type 1 (primary)', rows[0].associations[0].types[0].associationTypeId === 1, rows[0].associations);
@@ -78,7 +78,7 @@ check('reverting the field empties the outbox again', (await q(`select * from v_
 await q(`select gtm_review('o1', 'mark_sent')`);
 rows = await q(`select * from v_hubspot_outbox order by step`);
 check('mark sent queues note, task and stage move', rows.map(r => r.step).join() === '4,5,6', rows.map(r => r.step));
-check('note body is escaped HTML', rows[0].properties.hs_note_body.includes('Hi Bergen,<br>line 2'), rows[0].properties.hs_note_body);
+check('note body is escaped HTML', rows[0].properties.hs_note_body.includes('Hi Dana,<br>line 2'), rows[0].properties.hs_note_body);
 check('stage move updates the existing deal by id', rows[2].hubspot_id === 'dl_acc1' && rows[2].properties.dealstage === 'qualifiedtobuy', rows[2]);
 for (const r of rows) await record(r, 'run2', r.hubspot_id ? 'updated' : 'created', r.hubspot_id || ('x_' + r.link_type));
 check('after activities: outbox empty', (await q(`select * from v_hubspot_outbox`)).length === 0);

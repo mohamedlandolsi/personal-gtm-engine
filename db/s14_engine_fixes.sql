@@ -211,7 +211,7 @@ create or replace view v_outreach_blocks as
 with rej as (
   select q.account_id,
          bool_or(coalesce(q.reject_scope, 'account') = 'account')        as hard,
-         max(q.reviewed_at) filter (where q.reject_scope = 'pitch')      as pitch_at
+         max(coalesce(q.reviewed_at, q.run_date)) filter (where q.reject_scope = 'pitch') as pitch_at   -- S14 patch: gate rows have no reviewed_at
   from outreach_queue q
   where q.approval_status = 'rejected' and q.account_id is not null
   group by q.account_id

@@ -1,6 +1,6 @@
 # Architecture
 
-Ten n8n workflows, one Google Sheet, one Neon Postgres database, a Next.js review console and a HubSpot Free CRM. The engine and its helpers read and write the Sheet. Drafts and config live in Neon, which the console reads and writes. `GTM Neon Sync` bridges the two every 15 minutes. After you approve a draft, `GTM HubSpot Sync` puts the account in HubSpot and copies deal stages back. Every hand-off between workflows is a tab or a table you can inspect and correct.
+Eleven n8n workflows, one Google Sheet, one Neon Postgres database, a Next.js review console and a HubSpot Free CRM. The engine and its helpers read and write the Sheet. Drafts and config live in Neon, which the console reads and writes. `GTM Neon Sync` bridges the two every 15 minutes. After you approve a draft, `GTM HubSpot Sync` puts the account in HubSpot and copies deal stages back. Every hand-off between workflows is a tab or a table you can inspect and correct.
 
 ```
                  Inputs                       n8n (Docker on your laptop)                     Stores
@@ -27,12 +27,12 @@ Ten n8n workflows, one Google Sheet, one Neon Postgres database, a Next.js revie
 
 | Workflow | Nodes | Trigger | Job |
 |---|---|---|---|
-| Personal GTM Engine | 59 | Manual | Discovery, gates, scoring, website enrichment, contact merge, drafting into Neon |
+| Personal GTM Engine | 70 | Manual | Discovery, gates, scoring, website enrichment, contact merge, drafting into Neon |
 | GTM Contact Finder | 13 | Manual | Founder lookup: YC page first, Tavily as a gated fallback |
-| GTM Run | 8 | Manual | Sprint 14 run chain: GTM Neon Sync, Engine, Contact Finder, Engine, GTM Neon Sync, then fails loudly if accounts are still queued for contacts (ADR-105). The three called workflows each have a "When Executed by Another Workflow" trigger |
+| GTM Run | 8 | Manual | Sprint 14 run chain: GTM Neon Sync, Engine, Contact Finder, Engine, GTM Neon Sync. Every step hangs off the trigger and runs top to bottom (execution order v1), so the chain does not depend on what a sub-workflow returns. Fails only when accounts are queued and neither engine pass wrote a contact; otherwise returns `ok_queue_draining` and the next step (ADR-105, Sprint 14 patch). The three called workflows each have a "When Executed by Another Workflow" trigger |
 | GTM Neon Sync | 15 | Every 15 min (published) | Pushes console decisions to Sheets, then mirrors Sheets into Neon through `gtm_sync_pull()` |
 | GTM Clay Bridge | 11 | Manual | Imports the Clay accounts export into `clay_results` (new domains) and `accounts.clay_trigger*` (all domains) |
-| Clay Email Queue | 7 | Manual | Picks one primary contact per account for the Clay email waterfall |
+| Clay Email Queue | 8 | Manual | Picks one primary contact per account for the Clay email waterfall, skipping accounts the drafter would skip (`v_outreach_blocks`, small team without a trigger, buying role under 60) |
 | Clay Email Import | 8 | Manual | Applies Clay email results to `contacts`; never downgrades a verified email |
 | Clay Meter | 5 | Manual | Reads the Clay credit balance into `clay_ops`, before and after each Clay run |
 | GTM Engine: Error Alerts | 2 | Error trigger | Error workflow of the Engine and both syncs; posts failures to Discord |
@@ -77,10 +77,10 @@ A re-run writes nothing: `hubspot_links` remembers every HubSpot id, and the out
 ## Daily loop
 
 1. Start Docker. `GTM Neon Sync` runs every 15 minutes and `GTM HubSpot Sync` every 30 minutes on their own.
-2. Run `GTM Contact Finder` when new accounts are queued.
-3. Run `Personal GTM Engine`.
+2. Run `GTM Run` (Neon Sync, Engine, Contact Finder, Engine, Neon Sync). The contact queue is topped up to 10 accounts per run.
+3. Find emails for the new contacts: `Clay Email Queue` > run the waterfall in Clay by selection > export > import CSV > `Clay Email Import`. Then run `GTM Run` again: it drafts for the contacts that now have a verified email (ADR-112).
 4. Open the console (phone is fine): review, edit, approve, send by hand, **Mark sent**.
-5. Clay, only when needed. Emails: `Clay Email Queue` > run the waterfall in Clay by selection > export > import CSV > `Clay Email Import`. Accounts: run in Clay by selection > export > import CSV > `GTM Clay Bridge`. Run `Clay Meter` before and after.
+5. Clay accounts, only when needed: run in Clay by selection > export > import CSV > `GTM Clay Bridge`. Run `Clay Meter` before and after.
 
 Every stage is idempotent: the Data Table ledgers (`seen_accounts`, `seen_contacts`), `contact_results`, `clay_results` and the Neon `outreach_queue` make a re-run write nothing new.
 
@@ -105,7 +105,8 @@ One GET per new account. Regex signatures detect CRM and tooling (HubSpot, Sales
 
 1. For each queued account, guess the YC page slug and read the founders from the page's embedded JSON. Accepted only when the page lists the same website domain.
 2. Accounts not on YC go to Tavily search restricted to LinkedIn profiles. Gates: the company name must be in the profile title or a current role, the location must not contradict the account's country. Name-only matches are kept as `tavily_unverified` and flagged on the draft.
-3. Emails come later from Clay: `Clay Email Queue` picks one primary contact per account scoring 72+, plus every guessed email for validation.
+3. Accounts the finder answers with no usable person (NO_RESULT, or everyone rejected) are closed (`contacts_none`), so they leave the queue.
+4. Emails come later from Clay: `Clay Email Queue` picks one primary contact per account scoring 72+ (the strongest buying role), plus every guessed email for validation. It skips accounts the drafter would skip, so no credit is spent on a person who will never get a draft.
 
 ### Drafting
 
@@ -114,7 +115,7 @@ Sprint 14 put fixed rules in front of every LLM call. The draft path is:
 blocks -> buyer role -> small-team gate -> classify -> gate or angle -> LLM -> validator -> pending | needs_redraft
 
 1. **Blocks** (`Select Outreach Pairs`, Neon view `v_outreach_blocks`): a vetoed account, a rejected draft with scope `account` (or an older rejection with no scope), or a scope `pitch` rejection with no newer dated trigger: no new draft at that account (ADR-103).
-2. **Buyer role**: `buyerScore()` ranks titles (CEO 100, ops and revenue leads 90, founder 70, technical titles 30). Under `outreach.min_buyer_score` (60): skipped. Contacts older than `outreach.max_contact_age_days` are skipped too. Newest accounts first, then score plus the region bonus (ADR-109).
+2. **Buyer role**: `buyerScore()` ranks titles (CEO 100, ops and revenue leads 90, founder 70, technical titles 30). Under `outreach.min_buyer_score` (60): skipped. Contacts older than `outreach.max_contact_age_days` are skipped too, and a contact without a verified email waits `outreach.await_email_days` (3) for the Clay step before it can get a LinkedIn draft (ADR-112). Newest accounts first, then score plus the region bonus (ADR-109).
 3. **Small-team gate**: under `outreach.small_team_no_trigger` (10) people and no valid trigger (known type, dated, or a named hiring role): skipped, re-checked next run (ADR-111). Steps 1 to 3 write nothing.
 4. **Classify** (`Draft Outreach`): the homepage is always read once. Tools count only from script, embed or form hosts. Fixed keyword rules give `product_category` and `account_type`.
 5. **Gate or angle**: sells GTM tooling or is hardware: a visible `rejected` row with scope `account` and provider `gate:product_overlap` or `gate:hardware`, unless the account is in `outreach.gate_overrides` (ADR-106). Otherwise code picks 1 of 6 angles (hire_bridge, delivery_ops, client_reporting, demo_brief, booking_followup, signup_activation) with its basis; none fits: `rejected`, scope `pitch`, provider `gate:no_angle` (ADR-107).
