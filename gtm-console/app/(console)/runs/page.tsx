@@ -11,6 +11,8 @@ export const instant = false;
 
 const TABS = [
   { key: "engine", label: "Engine" },
+  // Sprint 15: one gig_ops row per GTM Gig Finder run
+  { key: "gigs", label: "Gigs" },
   { key: "sync", label: "Sync" },
   { key: "hubspot", label: "HubSpot" },
   { key: "activity", label: "Activity" },
@@ -63,6 +65,28 @@ type HubspotRun = {
   failed: number;
   stage_changes: number;
   errors_sample: string | null;
+};
+
+// Sprint 15: gig_ops (GTM Gig Finder). Every gate drop is counted (ADR-116).
+type GigRun = {
+  run_id: string;
+  run_at: Date;
+  config_rev: string | null;
+  fetched: number | null;
+  intent_for_hire: number | null;
+  intent_unclear: number | null;
+  stale: number | null;
+  crowded: number | null;
+  vetoed: number | null;
+  stack_miss: number | null;
+  budget_low: number | null;
+  already_seen: number | null;
+  scored: number | null;
+  drafted: number | null;
+  pinged: number | null;
+  expired: number | null;
+  errors: string | null;
+  source_stats: string | null;
 };
 
 type Quarantined = { link_type: string; local_id: string; failures: number; last_error: string | null };
@@ -199,6 +223,65 @@ function EngineTab({ rows }: { rows: EngineRun[] }) {
             {engineFlag(r)}
             {r.warnings ? <div className="text-[0.8125rem]"><Expandable text={`Warnings: ${r.warnings}`} /></div> : null}
             {r.errors_sample ? <div className="text-[0.8125rem]"><Expandable text={`Errors: ${r.errors_sample}`} /></div> : null}
+          </li>
+        ))}
+      </Blocks>
+    </>
+  );
+}
+
+function GigsTab({ rows }: { rows: GigRun[] }) {
+  if (rows.length === 0) return <Empty text="No Gig Finder runs yet. Run GTM Gig Finder in n8n, or publish it to run every 3 hours." href="/gigs" action="Open gig posts" />;
+  const gated = (r: GigRun) =>
+    `${n(r.intent_for_hire) || 0} offering services, ${n(r.stale) || 0} too old, ${n(r.crowded) || 0} crowded, ` +
+    `${n(r.vetoed) || 0} vetoed, ${n(r.stack_miss) || 0} no stack match, ${n(r.budget_low) || 0} under the rate floor`;
+  return (
+    <>
+      <TableShell>
+        <thead>
+          <tr className={HEAD}>
+            <Th>Run</Th><Th>Config rev</Th><Th right>Fetched</Th><Th right>Seen</Th><Th right>Scored</Th><Th right>Drafted</Th>
+            <Th right>Pinged</Th><Th right>Expired</Th><Th>Gated</Th><Th>Errors</Th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {rows.map((r) => (
+            <tr key={r.run_id} className={ROW}>
+              <td className="px-3 py-2.5"><Time at={r.run_at} /></td>
+              <td className="max-w-[12rem] px-3 py-2.5 font-mono text-[0.8125rem] wrap-anywhere">{r.config_rev}</td>
+              <Num>{n(r.fetched)}</Num>
+              <Num>{n(r.already_seen)}</Num>
+              <Num>{n(r.scored)}</Num>
+              <Num>{n(r.drafted)}</Num>
+              <Num>{n(r.pinged)}</Num>
+              <Num>{n(r.expired)}</Num>
+              <td className="max-w-[18rem] px-3 py-2.5 text-[0.8125rem]"><Expandable text={gated(r)} /></td>
+              <td className="max-w-[18rem] space-y-1 px-3 py-2.5 text-[0.8125rem]">
+                {r.errors ? <Flag tone="danger">Errors</Flag> : null}
+                <Expandable text={r.errors} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </TableShell>
+      <Blocks>
+        {rows.map((r) => (
+          <li key={r.run_id} className="space-y-1 px-4 py-3 text-[0.9375rem]">
+            <div className="flex items-baseline gap-2">
+              <Time at={r.run_at} />
+              <span className="ml-auto min-w-0 truncate font-mono text-[0.8125rem] text-muted-foreground">{r.config_rev}</span>
+            </div>
+            <p className="tabular">
+              <strong>{n(r.fetched) || 0}</strong> fetched, <strong>{n(r.scored) || 0}</strong> scored,{" "}
+              <strong>{n(r.drafted) || 0}</strong> drafted, <strong>{n(r.pinged) || 0}</strong> pinged
+            </p>
+            <div className="text-[0.8125rem] text-muted-foreground"><Expandable text={`Gated: ${gated(r)}`} /></div>
+            {r.errors ? (
+              <div className="space-y-1 text-[0.8125rem]">
+                <Flag tone="danger">Errors</Flag>
+                <Expandable text={r.errors} />
+              </div>
+            ) : null}
           </li>
         ))}
       </Blocks>
@@ -439,6 +522,12 @@ export default async function RunsPage({ searchParams }: PageProps<"/runs">) {
              llm_calls, llm_failures, warnings, errors_sample
       from ops order by run_at desc limit 30`) as EngineRun[];
     body = <EngineTab rows={rows} />;
+  } else if (tab === "gigs") {
+    const rows = (await sql`
+      select run_id, run_at, config_rev, fetched, intent_for_hire, intent_unclear, stale, crowded, vetoed, stack_miss,
+             budget_low, already_seen, scored, drafted, pinged, expired, errors, source_stats
+      from gig_ops order by run_at desc limit 30`) as GigRun[];
+    body = <GigsTab rows={rows} />;
   } else if (tab === "sync") {
     const rows = (await sql`
       select id::int as id, run_at, pushed_config, pushed_outreach, pushed_contacts, pushed_accounts,

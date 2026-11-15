@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { CircleCheck, ExternalLink, TriangleAlert } from "lucide-react";
 import { sql } from "@/lib/db";
 import { requireSession } from "@/lib/session";
-import { REJECT_SCOPE_LABELS, displayState, gateName, httpUrl, idWords, timeAgo } from "@/lib/format";
+import { PLATFORM_LABELS, REJECT_SCOPE_LABELS, TRACK_LABELS, displayState, gateName, httpUrl, idWords, timeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ChannelIcon, channelLabel } from "@/components/channel-icon";
 import { readHubspotCfg } from "@/lib/hubspot";
@@ -59,7 +59,40 @@ type Draft = {
   angle_basis: string | null;
   account_type: string | null;
   product_category: string | null;
+  // Sprint 15: lead track, the agency directory profile, and the gig post behind a gig draft.
+  lead_track: string | null;
+  source_meta: string | null;
+  gig_platform: string | null;
+  gig_url: string | null;
+  gig_posted_at: Date | null;
+  gig_reply_count: number | null;
+  gig_matched_stack: string | null;
+  gig_stated_budget: string | null;
+  gig_status: string | null;
+  gig_score: number | null;
 };
+
+type DirectoryMeta = {
+  directory?: string;
+  tier?: string;
+  services?: string[];
+  languages?: string[];
+  pricing?: string[];
+  profile_url?: string;
+};
+
+// source_meta is a short JSON string written by the engine; anything unreadable is ignored.
+function readMeta(text: string | null): DirectoryMeta | null {
+  if (!text) return null;
+  try {
+    const m = JSON.parse(text);
+    return m && typeof m === "object" ? (m as DirectoryMeta) : null;
+  } catch {
+    return null;
+  }
+}
+
+const list = (v: string[] | undefined) => (Array.isArray(v) && v.length ? v.join(", ") : null);
 
 type Event = {
   id: number;
@@ -163,6 +196,10 @@ export async function DraftDetail({ id, mode }: { id: string; mode: "page" | "pa
   const inCrmScope =
     (d.approval_status === "approved" || d.send_status === "sent") && d.account_status !== "rejected";
   const Title = mode === "page" ? "h1" : "h2";
+  const gig = d.lead_track === "gig_post";
+  const meta = d.lead_track === "agency_partner" ? readMeta(d.source_meta) : null;
+  const postUrl = httpUrl(d.gig_url);
+  const profileUrl = httpUrl(meta?.profile_url ?? null);
 
   return (
     <div className={cn("space-y-4", mode === "page" && "pb-20 sm:pb-0")}>
@@ -180,6 +217,12 @@ export async function DraftDetail({ id, mode }: { id: string; mode: "page" | "pa
           {gate ? (
             <span className="inline-flex h-6 shrink-0 items-center rounded bg-secondary px-2 text-[0.8125rem] font-medium">
               Auto
+            </span>
+          ) : null}
+          {/* Sprint 15: the lead track is a fact, not a state, so the chip stays neutral. */}
+          {d.lead_track && d.lead_track !== "smb_direct" ? (
+            <span className="inline-flex h-6 shrink-0 items-center rounded bg-secondary px-2 text-[0.8125rem] font-medium">
+              {TRACK_LABELS[d.lead_track] ?? d.lead_track}
             </span>
           ) : null}
         </div>
@@ -237,6 +280,55 @@ export async function DraftDetail({ id, mode }: { id: string; mode: "page" | "pa
           notes: d.notes,
         }}
       />
+
+      {gig ? (
+        <Panel title="Gig post">
+          <dl className="grid gap-3 sm:grid-cols-2">
+            <Fact term="Platform" value={d.gig_platform ? (PLATFORM_LABELS[d.gig_platform] ?? d.gig_platform) : null} />
+            <Fact term="Posted" value={d.gig_posted_at ? timeAgo(d.gig_posted_at.toISOString()) : null} />
+            <Fact term="Replies" value={d.gig_reply_count == null ? "Unknown" : String(d.gig_reply_count)} />
+            <Fact term="Gig score" value={d.gig_score == null ? null : String(d.gig_score)} />
+            <Fact term="Matched stack" value={d.gig_matched_stack} />
+            <Fact term="Budget" value={d.gig_stated_budget || "Not stated"} />
+            <Fact term="Post status" value={d.gig_status ? d.gig_status.replace(/_/g, " ") : null} />
+          </dl>
+          {postUrl ? (
+            <a
+              href={postUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex h-11 items-center gap-1.5 font-medium underline underline-offset-4 sm:h-auto"
+            >
+              Open the post
+              <ExternalLink className="size-3.5" aria-hidden />
+            </a>
+          ) : null}
+          <p className="text-[0.8125rem] text-ink-3">Nothing is sent from here. Reply on the platform, then mark it sent.</p>
+        </Panel>
+      ) : null}
+
+      {meta ? (
+        <Panel title="Directory profile">
+          <dl className="grid gap-3 sm:grid-cols-2">
+            <Fact term="Directory" value={meta.directory === "n8n" ? "n8n experts" : meta.directory === "clay" ? "Clay experts" : (meta.directory ?? null)} />
+            <Fact term="Tier" value={meta.tier ?? null} />
+            <Fact term="Services" value={list(meta.services)} />
+            <Fact term="Languages" value={list(meta.languages)} />
+            <Fact term="Pricing" value={list(meta.pricing)?.replace(/-/g, " ") ?? null} />
+          </dl>
+          {profileUrl ? (
+            <a
+              href={profileUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex h-11 items-center gap-1.5 font-medium underline underline-offset-4 sm:h-auto"
+            >
+              Open the profile
+              <ExternalLink className="size-3.5" aria-hidden />
+            </a>
+          ) : null}
+        </Panel>
+      ) : null}
 
       {/* The pane is narrower than the page, so its side column only appears from xl. */}
       <div

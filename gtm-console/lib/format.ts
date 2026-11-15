@@ -32,6 +32,35 @@ export const FACTOR_LABELS: Record<string, string> = {
   automation: "Automation need",
   timezone: "Timezone",
   feasibility: "Reachability",
+  // Sprint 15: agency_partner score (plan 4.4)
+  stack: "Stack fit",
+  capacity: "Capacity need",
+  size: "Size fit",
+  tz_lang: "Time zone and language",
+};
+
+// Sprint 15 (ADR-113): lead tracks, worded as the filter chips show them.
+export const TRACKS = [
+  { key: "all", label: "All" },
+  { key: "smb_direct", label: "SMB" },
+  { key: "agency_partner", label: "Agency" },
+  { key: "gig_post", label: "Gig" },
+] as const;
+export type TrackKey = (typeof TRACKS)[number]["key"];
+
+export function trackParam(v: string | string[] | undefined): TrackKey {
+  const s = Array.isArray(v) ? v[0] : v;
+  return TRACKS.some((t) => t.key === s) ? (s as TrackKey) : "all";
+}
+
+export const TRACK_LABELS: Record<string, string> = { smb_direct: "SMB", agency_partner: "Agency", gig_post: "Gig" };
+
+// gig_posts.platform in words
+export const PLATFORM_LABELS: Record<string, string> = {
+  n8n_forum: "n8n community",
+  make_forum: "Make community",
+  hn_freelancer: "Hacker News",
+  manual: "Added by hand",
 };
 
 // Only render links that are plain web URLs (data comes from scrapers and Sheets).

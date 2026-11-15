@@ -134,12 +134,15 @@ function Row({
 
 export function QueueWorkspace({
   tab,
+  track = "all",
   rows,
   selectedId,
   showChips,
   children,
 }: {
   tab: string;
+  /** Sprint 15: lead track filter, kept in the URL when a row is picked. */
+  track?: string;
   rows: QueueRow[];
   selectedId: string | null;
   showChips: boolean;
@@ -171,9 +174,11 @@ export function QueueWorkspace({
     el?.scrollIntoView({ block: "nearest" });
   }
 
+  const base = `/queue?tab=${encodeURIComponent(tab)}${track !== "all" ? `&track=${encodeURIComponent(track)}` : ""}`;
+
   function select(id: string | null, focus = false) {
     setPicked(id);
-    const q = `/queue?tab=${encodeURIComponent(tab)}`;
+    const q = base;
     router.replace(id ? `${q}&id=${encodeURIComponent(id)}` : q, { scroll: false });
     if (focus && id) focusRow(id);
   }
@@ -217,8 +222,8 @@ export function QueueWorkspace({
   const first = rows[0]?.outreach_id;
   useEffect(() => {
     if (selectedId || !first || !window.matchMedia(TWO_PANE).matches) return;
-    router.replace(`/queue?tab=${encodeURIComponent(tab)}&id=${encodeURIComponent(first)}`, { scroll: false });
-  }, [selectedId, first, tab, router]);
+    router.replace(`${base}&id=${encodeURIComponent(first)}`, { scroll: false });
+  }, [selectedId, first, base, router]);
 
   return (
     <QueueSelection value={{ move }}>

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Search } from "lucide-react";
 import { sql } from "@/lib/db";
 import { requireSession } from "@/lib/session";
-import { blockLabel, timeAgo } from "@/lib/format";
+import { TRACKS, TRACK_LABELS, blockLabel, timeAgo, trackParam } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScoreMeter } from "@/components/score-meter";
@@ -33,6 +33,7 @@ type Account = {
   drafts_count: number;
   run_date: Date | null;
   block_reason: string | null;
+  lead_track: string | null;
 };
 
 const words = (v: string | null) => (v ? v.replace(/_/g, " ") : "");
@@ -56,21 +57,25 @@ export default async function AccountsPage({ searchParams }: PageProps<"/account
   const q = first(sp.q).trim().slice(0, 100);
   const rawFilter = first(sp.filter);
   const filter: Filter = FILTERS.some((f) => f.key === rawFilter) ? (rawFilter as Filter) : "all";
+  // Sprint 15 (ADR-113): lead track filter
+  const track = trackParam(sp.track);
   // Escape LIKE wildcards so "n8n_io" matches literally.
   const like = q.replace(/[\\%_]/g, "\\$&");
 
   const rows = (await sql`
     select account_id, company_name, domain, final_score, priority, status, enrichment_status,
-           clay_status, contact_status, contacts_count, drafts_count, run_date, block_reason
+           clay_status, contact_status, contacts_count, drafts_count, run_date, block_reason, lead_track
     from v_accounts
     where (${q} = '' or company_name ilike '%' || ${like} || '%' or domain ilike '%' || ${like} || '%')
       and (${filter} = 'all'
         or (${filter} = 'qualified' and final_score >= 65 and status is distinct from 'rejected')
         or (${filter} = 'rejected'  and status = 'rejected'))
+      and (${track} = 'all' or lead_track = ${track})
     order by final_score desc nulls last, company_name
     limit 200`) as Account[];
 
-  const href = (f: Filter) => `/accounts?${new URLSearchParams({ ...(q ? { q } : {}), filter: f })}`;
+  const href = (f: Filter, tr: string = track) =>
+    `/accounts?${new URLSearchParams({ ...(q ? { q } : {}), filter: f, ...(tr !== "all" ? { track: tr } : {}) })}`;
   const detail = (id: string) => `/accounts/${encodeURIComponent(id)}`;
 
   return (
@@ -80,6 +85,7 @@ export default async function AccountsPage({ searchParams }: PageProps<"/account
       <div className="flex flex-col gap-2 md:flex-row md:items-center">
         <form action="/accounts" className="flex flex-1 gap-2" role="search">
           <input type="hidden" name="filter" value={filter} />
+          {track !== "all" ? <input type="hidden" name="track" value={track} /> : null}
           <Input
             name="q"
             defaultValue={q}
@@ -97,6 +103,10 @@ export default async function AccountsPage({ searchParams }: PageProps<"/account
           items={FILTERS.map((f) => ({ href: href(f.key), label: f.label, active: f.key === filter }))}
         />
       </div>
+      <SegmentedLinks
+        label="Lead track"
+        items={TRACKS.filter((t) => t.key !== "gig_post").map((t) => ({ href: href(filter, t.key), label: t.label, active: t.key === track }))}
+      />
 
       <p className="tabular text-[0.8125rem] text-ink-3">
         {rows.length} {rows.length === 1 ? "account" : "accounts"}
@@ -124,6 +134,7 @@ export default async function AccountsPage({ searchParams }: PageProps<"/account
                   </div>
                   <div className="flex items-center gap-2 text-[0.8125rem] text-muted-foreground">
                     <span className="min-w-0 truncate">{a.domain}</span>
+                    {a.lead_track === "agency_partner" ? <span className="shrink-0">{TRACK_LABELS.agency_partner}</span> : null}
                     <span className="ml-auto shrink-0"><AccountStatus status={a.status} block={a.block_reason} /></span>
                   </div>
                   <p className="tabular flex text-[0.8125rem] text-ink-3">
@@ -161,7 +172,10 @@ export default async function AccountsPage({ searchParams }: PageProps<"/account
                       <Link href={detail(a.account_id)} className="block font-semibold hover:underline">
                         <span className="block truncate">{a.company_name ?? a.account_id}</span>
                       </Link>
-                      <span className="block truncate text-[0.8125rem] text-muted-foreground">{a.domain}</span>
+                      <span className="block truncate text-[0.8125rem] text-muted-foreground">
+                        {a.domain}
+                        {a.lead_track === "agency_partner" ? `, ${TRACK_LABELS.agency_partner.toLowerCase()}` : ""}
+                      </span>
                     </td>
                     <td className="px-3 py-3"><ScoreMeter score={a.final_score} /></td>
                     <td className="px-3 py-3 font-semibold">{a.priority === "true" ? "Yes" : ""}</td>

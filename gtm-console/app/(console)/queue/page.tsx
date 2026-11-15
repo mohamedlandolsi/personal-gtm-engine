@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { sql } from "@/lib/db";
 import { requireSession } from "@/lib/session";
-import { displayState, gateName, timeAgo } from "@/lib/format";
+import { TRACKS, displayState, gateName, timeAgo, trackParam } from "@/lib/format";
 import { DraftDetail } from "@/components/draft-detail";
 import { QueueWorkspace, type QueueRow } from "@/components/queue-workspace";
 import { SegmentedLinks } from "@/components/segmented-links";
@@ -40,6 +40,9 @@ export default async function QueuePage({ searchParams }: PageProps<"/queue">) {
   await requireSession();
   const sp = await searchParams;
   const tab: Tab = TABS.some((t) => t.key === sp.tab) ? (sp.tab as Tab) : "review";
+  // Sprint 15 (ADR-113): lead track filter, combined with the tab.
+  const track = trackParam(sp.track);
+  const href = (t: string, tr: string) => `/queue?tab=${t}${tr !== "all" ? `&track=${tr}` : ""}`;
   // The desktop pane's draft. Phones never set it; the list picks the first row on desktop.
   const selectedId = typeof sp.id === "string" && sp.id.length > 0 && sp.id.length <= 200 ? sp.id : null;
 
@@ -51,18 +54,20 @@ export default async function QueuePage({ searchParams }: PageProps<"/queue">) {
       count(*) filter (where approval_status = 'rejected')::int as rejected,
       count(*) filter (where send_status = 'sent')::int as sent,
       count(*) filter (where approval_status <> 'superseded')::int as "all"
-    from v_review_queue`) as Counts[];
+    from v_review_queue
+    where (${track} = 'all' or lead_track = ${track})`) as Counts[];
 
   const rows = (await sql`
     select outreach_id, company_name, final_score, contact_name, contact_title, channel,
            first_line, run_date, approval_status, send_status, llm_provider, notes
     from v_review_queue
-    where (${tab} = 'review'   and approval_status in ('pending','edited') and send_status = 'not_sent')
+    where ((${tab} = 'review'   and approval_status in ('pending','edited') and send_status = 'not_sent')
        or (${tab} = 'redraft'  and approval_status = 'needs_redraft' and send_status = 'not_sent')
        or (${tab} = 'approved' and approval_status = 'approved' and send_status = 'not_sent')
        or (${tab} = 'rejected' and approval_status = 'rejected')
        or (${tab} = 'sent'     and send_status = 'sent')
-       or (${tab} = 'all'      and approval_status <> 'superseded')
+       or (${tab} = 'all'      and approval_status <> 'superseded'))
+      and (${track} = 'all' or lead_track = ${track})
     order by final_score desc nulls last, run_date desc nulls last
     limit 100`) as Row[];
 
@@ -90,11 +95,15 @@ export default async function QueuePage({ searchParams }: PageProps<"/queue">) {
       <SegmentedLinks
         label="Draft filter"
         items={TABS.map((t) => ({
-          href: `/queue?tab=${t.key}`,
+          href: href(t.key, track),
           label: t.label,
           count: counts?.[t.key] ?? 0,
           active: t.key === tab,
         }))}
+      />
+      <SegmentedLinks
+        label="Lead track"
+        items={TRACKS.map((t) => ({ href: href(tab, t.key), label: t.label, active: t.key === track }))}
       />
 
       {/* With a selection, keep the workspace even when the list just emptied, so the last row can collapse out. */}
@@ -108,14 +117,14 @@ export default async function QueuePage({ searchParams }: PageProps<"/queue">) {
             <p>No drafts in this view.</p>
           )}
           <Link
-            href={tab === "review" ? "/queue?tab=all" : "/queue"}
+            href={tab === "review" ? href("all", track) : "/queue"}
             className="mt-2 inline-block text-[0.9375rem] font-medium underline underline-offset-4"
           >
             {tab === "review" ? "See all drafts" : "Back to review"}
           </Link>
         </div>
       ) : (
-        <QueueWorkspace key={tab} tab={tab} rows={list} selectedId={selectedId} showChips={tab !== "review"}>
+        <QueueWorkspace key={tab + track} tab={tab} track={track} rows={list} selectedId={selectedId} showChips={tab !== "review"}>
           {selectedId ? (
             <DraftDetail id={selectedId} mode="pane" />
           ) : (

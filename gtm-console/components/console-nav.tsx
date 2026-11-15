@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, Building2, Ellipsis, Inbox, LogOut, SlidersHorizontal } from "lucide-react";
+import { Activity, Briefcase, Building2, Ellipsis, Inbox, LogOut, SlidersHorizontal } from "lucide-react";
 import { logout } from "@/app/login/actions";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,8 @@ import { ThemeToggle } from "@/components/theme-toggle";
 
 const LINKS = [
   { href: "/queue", label: "Queue", Icon: Inbox },
+  // Sprint 15: gig posts (open first each day, they go stale fast)
+  { href: "/gigs", label: "Gigs", Icon: Briefcase },
   { href: "/accounts", label: "Accounts", Icon: Building2 },
   { href: "/config", label: "Config", Icon: SlidersHorizontal },
   { href: "/runs", label: "Runs", Icon: Activity },

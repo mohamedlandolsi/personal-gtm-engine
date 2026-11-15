@@ -14,6 +14,12 @@ const KNOWN: [prefix: string, title: string][] = [
   ["needs_redraft", "Edit this draft or ask for a re-draft before approving"],
   ["invalid_scope", "Pick why you are rejecting this draft"],
   ["reason_too_long", "The reason is over 500 characters"],
+  // Sprint 15: Gigs page (gtm_gig_add, gtm_gig_status)
+  ["invalid_url", "Paste the full link to the post"],
+  ["title_too_short", "The title needs at least 5 characters"],
+  ["body_too_short", "Paste the post text, at least 20 characters"],
+  ["invalid_status", "That status is not available for gig posts"],
+  ["not_found", "This post is no longer in the list"],
 ];
 
 export function errorTitle(error: string): string {
