@@ -14,6 +14,7 @@ import { pathToFileURL } from 'node:url';
 const S15_TEST_ENDPOINT = 'ep-bitter-sound-b9saaxyd';   // branch s15-test (br-wispy-glitter-b9trkhwp)
 const neon = process.argv.includes('--neon');
 const migration = fs.readFileSync('db/s15_lead_tracks.sql', 'utf8');
+const hubspot = fs.readFileSync('db/s15_hubspot.sql', 'utf8');   // Phase 6
 
 let run, close;
 if (neon) {
@@ -58,7 +59,9 @@ const hoursAgo = (h) => new Date(Date.now() - h * 3600e3).toISOString();
 // ---------- migration ---------------------------------------------------------------
 await q(migration);
 await q(migration);
-check('migration runs twice without error', true);
+await q(hubspot);
+await q(hubspot);
+check('migrations (lead tracks, hubspot) run twice without error', true);
 const cols = await q(`select table_name, column_name, is_nullable, column_default from information_schema.columns
   where table_schema = 'public' and column_name in ('lead_track','source_meta') and table_name in ('accounts','outreach_queue') order by 1, 2`);
 check('lead_track and source_meta exist with smb_direct default',
@@ -188,6 +191,16 @@ try {
   check('gig_status: every change logged in console_events', gev.join() === 'replied,won', gev);
   const vg = await one(`select age_hours, outreach_id, draft_status from v_gig_posts where post_key = 'n8n:t15a'`);
   check('v_gig_posts: age and live draft shown', vg && vg.age_hours >= 4 && vg.outreach_id === 't15_g_t15a' && vg.draft_status === 'approved', vg);
+
+  // ---------- Phase 6: HubSpot outbox ----------------------------------------------------
+  await q(`update accounts set lead_track = 'agency_partner' where account_id = 't15_agy'`);
+  let ob = await one(`select properties from v_hubspot_outbox where step = 1 and local_id = 't15_agy'`);
+  check('hubspot outbox: company payload carries gtm_lead_track', ob && ob.properties.gtm_lead_track === 'agency_partner', ob);
+  await q(`insert into hubspot_links (link_type, local_id, hubspot_id, pushed_hash)
+           select 'companies', 't15_agy', 'hs_t15', md5(properties::text) from v_hubspot_outbox where step = 1 and local_id = 't15_agy'`);
+  ob = await one(`select count(*)::int as n from v_hubspot_outbox where step = 1 and local_id = 't15_agy'`);
+  check('hubspot outbox: a second sync writes nothing for the same company', ob.n === 0, ob);
+  check('hubspot outbox: no gig draft in scope', (await one(`select count(*)::int as n from v_hubspot_scope where account_id like 'gig:%'`)).n === 0);
 
   // ---------- views --------------------------------------------------------------------
   const hs = (await q(`select outreach_id from v_hubspot_scope where outreach_id like 't15_%'`)).map(x => x.outreach_id).sort();
