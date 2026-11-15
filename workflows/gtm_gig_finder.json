@@ -1,0 +1,830 @@
+{
+  "updatedAt": "2026-11-15T13:24:25.762Z",
+  "createdAt": "2026-11-15T13:17:36.886Z",
+  "name": "GTM Gig Finder",
+  "description": "Sprint 15 gig lane: forum notification mail, HN (off) and manual adds become gig_posts; fixed gates and scoring, LLM reply drafts to the review console, hot-gig Discord ping, gig_ops stats.",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "id": "8e553e31-8e3f-4b6a-ae25-bc18a7227a9f",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "5a28206d-cb94-4818-9b39-fc3e4ddc9e8f",
+      "name": "Fetch Config",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        224,
+        192
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select * from n8n_config_sheet;",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "name": "Neon GTM"
+        }
+      },
+      "executeOnce": true
+    },
+    {
+      "id": "a2f361ef-bee6-49ff-988b-14ab68058fd0",
+      "name": "When Executed by Another Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        192
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "1c332c93-b1c7-48cf-b3e6-6b0aaa961403",
+      "name": "Every 3 Hours",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        384
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "31ed4a25-9462-4d5e-bd69-afb9689bac92",
+      "name": "Load Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        192
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const DEFAULTS = {\n  rev: 'personal-gtm-sprint1-unified',\n  enabled: true,\n  max_companies_per_run: 25,\n  min_account_score: 65,\n  priority_score: 80,\n  allow_agencies: true,\n  allow_startups: true,\n  allow_smb: true,\n  allow_enterprise: false,\n  timezone: {\n    allowed_utc_offsets: [0, 1, 2, 3, 4],\n    allow_unknown_timezone: false\n  },\n  company: {\n    employee_min: 2,\n    employee_max: 150,\n    must_have_domain: true,\n    industries_include: [],\n    industries_exclude: [],\n    keywords_include: [],\n    keywords_exclude: []\n  },\n  scoring: {\n    weights: {\n      icp_fit: 0.35,\n      budget_proxy: 0.25,\n      automation_need: 0.25,\n      timezone_fit: 0.15\n    },\n    vertical_boost: {\n      enabled: true,\n      bonus: 5,\n      keywords: []\n    }\n  }\n};\n\nconst rows = $('Fetch Config').all().map(i => i.json);\nconst row = rows.find(r => String(r.key || '').trim().toLowerCase() === 'config_json');\n\nlet warnings = [];\nlet config = JSON.parse(JSON.stringify(DEFAULTS));\n\nif (row && row.value) {\n  try {\n    const parsed = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;\n\n    config = {\n      ...config,\n      ...parsed,\n      timezone: {\n        ...config.timezone,\n        ...(parsed.timezone || {})\n      },\n      company: {\n        ...config.company,\n        ...(parsed.company || {})\n      },\n      scoring: {\n        ...config.scoring,\n        ...(parsed.scoring || {}),\n        weights: {\n          ...config.scoring.weights,\n          ...((parsed.scoring || {}).weights || {})\n        },\n        vertical_boost: {\n          ...config.scoring.vertical_boost,\n          ...((parsed.scoring || {}).vertical_boost || {})\n        }\n      }\n    };\n  } catch (e) {\n    warnings.push('config_json invalid: ' + String(e.message || e));\n  }\n} else {\n  warnings.push('config_json missing; using defaults');\n}\n\nreturn [{ json: { config, warnings } }];"
+      }
+    },
+    {
+      "id": "e6896b77-bad1-46d1-80dc-5dd3bc267738",
+      "name": "Read Forum Mail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        672,
+        0
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": "={{ (((($('Load Config').first().json.config || {}).gig || {}).sources || {}).forum_mail || {}).max_messages || 30 }}",
+        "simple": false,
+        "filters": {
+          "q": "={{ (((($('Load Config').first().json.config || {}).gig || {}).sources || {}).forum_mail || {}).gmail_query || 'label:gtm-gigs newer_than:4d' }}",
+          "readStatus": "both"
+        },
+        "options": {}
+      },
+      "disabled": true,
+      "executeOnce": true,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "webhookId": "6de51bb0-3920-49a6-b2ac-a6bf8fc15fca"
+    },
+    {
+      "id": "7977072e-7d60-4174-8779-524dd0b808c6",
+      "name": "Parse Forum Mail",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Parse Forum Mail (Code node, Run Once for All Items). Sprint 15, Phase 0 outcome.\n// The n8n and Make community terms forbid automated access to the forums, so new Jobs topics reach the\n// engine as the forum's own notification emails: you set the Jobs category to \"Watching First Post\", a Gmail\n// filter labels those emails, and the Read Forum Mail node reads them. This node turns each email into a post.\n// While Read Forum Mail is disabled (no Gmail credential yet), n8n passes the Load Config item through: it is ignored.\nconst cfg = $('Load Config').first().json.config || {};\nconst G = cfg.gig || {};\nconst S = (G.sources || {}).forum_mail || {};\nif (G.enabled === false || S.enabled === false) return [{ json: { __skipped: 'forum_mail: disabled by config' } }];\n\nconst HOSTS = (Array.isArray(S.hosts) && S.hosts.length ? S.hosts : ['community.n8n.io']).map(h => String(h).toLowerCase());\nconst PREFIX = { 'community.n8n.io': 'n8n', 'community.make.com': 'make' };\nconst PLATFORM = { 'community.n8n.io': 'n8n_forum', 'community.make.com': 'make_forum' };\nconst esc = s => String(s).replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');\nconst LINK = new RegExp('https?://(' + HOSTS.map(esc).join('|') + ')/t/([a-z0-9%_-]+)/(\\\\d+)(?:/(\\\\d+))?', 'i');\n\nconst htmlText = h => String(h || '')\n  .replace(/<(script|style)[\\s\\S]*?<\\/\\1>/gi, ' ')\n  .replace(/<br\\s*\\/?>/gi, '\\n').replace(/<\\/(p|div|li|h\\d|tr|blockquote)>/gi, '\\n')\n  .replace(/<[^>]+>/g, ' ')\n  .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')\n  .replace(/&#39;|&apos;/g, \"'\").replace(/&quot;/g, '\"')\n  .replace(/[ \\t]+/g, ' ').replace(/ *\\n */g, '\\n').replace(/\\n{3,}/g, '\\n\\n').trim();\nconst FOOTER = /\\n\\s*(visit topic|reply to this email|to unsubscribe|you are receiving this|unsubscribe|view in browser|in reply to)\\b/i;\n\nconst mails = $input.all().map(i => i.json).filter(m => m && (m.id || m.messageId) && (m.subject || m.Subject || m.text || m.html || m.snippet));\nif (!mails.length) return [{ json: { __skipped: 'forum_mail: no mail read (Read Forum Mail disabled, no credential, or no new mail)' } }];\n\nconst C = { mails: mails.length, posts: 0, no_link: 0, replies_skipped: 0 };\nconst byKey = new Map();\nfor (const m of mails) {\n  const subject = String(m.subject || m.Subject || '').trim();\n  const text = m.text ? String(m.text).replace(/\\r/g, '') : htmlText(m.html || m.textAsHtml || m.snippet || '');\n  const hay = text + '\\n' + String(m.html || '');\n  const lm = hay.match(LINK);\n  if (!lm) { C.no_link++; continue; }\n  const host = lm[1].toLowerCase(), slug = lm[2], topicId = lm[3], postNo = Number(lm[4] || 1);\n  if (postNo > 1) { C.replies_skipped++; continue; }                     // a reply in the thread, not a new post\n\n  const fromName = (m.from && m.from.value && m.from.value[0] && m.from.value[0].name) || String(m.From || '').replace(/<[^>]*>/, '').trim();\n  const poster = String(fromName || '').replace(/^\"|\"$/g, '').replace(/\\s+via\\s+.+$/i, '').trim();\n  let title = subject.replace(/^\\s*((re|fwd?):\\s*)*/i, '').replace(/^(\\s*\\[[^\\]]*\\])+\\s*/, '').trim();\n  if (!title) title = decodeURIComponent(slug).replace(/-/g, ' ');\n  let body = text;\n  const f = body.search(FOOTER);\n  if (f > 40) body = body.slice(0, f);\n  body = body.split('\\n').filter(l => !LINK.test(l) || l.replace(LINK, '').trim().length > 10).join('\\n').trim().slice(0, 4000);\n\n  const date = m.date ? new Date(m.date) : (m.internalDate ? new Date(Number(m.internalDate)) : new Date());\n  const post = {\n    post_key: (PREFIX[host] || host.split('.')[1] || 'forum') + ':' + topicId,\n    platform: PLATFORM[host] || 'n8n_forum',\n    url: 'https://' + host + '/t/' + slug + '/' + topicId,\n    title: title.slice(0, 300), body_text: body, poster: poster.slice(0, 120), poster_company: '',\n    posted_at: isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString(),\n    reply_count: null, __source: 'forum_mail'\n  };\n  const prev = byKey.get(post.post_key);\n  if (!prev || post.body_text.length > prev.body_text.length) byKey.set(post.post_key, post);\n}\nC.posts = byKey.size;\nreturn [...byKey.values()].map(p => ({ json: p })).concat([{ json: { __stats: 'forum_mail: ' + Object.entries(C).map(([k, v]) => k + '=' + v).join(' ') } }]);\n"
+      }
+    },
+    {
+      "id": "aa0ff956-0b7a-4e54-9d8d-cf11ef106cef",
+      "name": "Merge Posts",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1120,
+        176
+      ],
+      "parameters": {
+        "mode": "append",
+        "numberInputs": 3
+      }
+    },
+    {
+      "id": "5230fe77-5506-413e-9a01-95a5ef55733b",
+      "name": "HN Freelancer Source",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        192
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// HN Freelancer Source (Code node, Run Once for All Items). Sprint 15.\n// Latest \"Ask HN: Freelancer? Seeking freelancer?\" thread via the public Algolia API; keeps top-level\n// comments that start with SEEKING FREELANCER (people hiring). Off by default: the Phase 0 spike found\n// 0 hiring posts in the August to November 2026 threads. Turn on with gig.sources.hn_freelancer.enabled.\nconst cfg = $('Load Config').first().json.config || {};\nconst G = cfg.gig || {};\nconst S = (G.sources || {}).hn_freelancer || {};\nif (G.enabled === false || S.enabled !== true) return [{ json: { __skipped: 'hn_freelancer: disabled by config' } }];\n\nconst TITLE = String(S.title_match || 'Freelancer? Seeking freelancer?');\nconst http = async (url) => this.helpers.httpRequest({ method: 'GET', url, json: true, timeout: 20000 });\nconst text = h => String(h || '').replace(/<p>/gi, '\\n').replace(/<[^>]+>/g, ' ')\n  .replace(/&#x27;|&#39;/g, \"'\").replace(/&quot;/g, '\"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')\n  .replace(/&#x2F;/g, '/').replace(/[ \\t]+/g, ' ').replace(/\\n{3,}/g, '\\n\\n').trim();\n\nlet story;\ntry {\n  const s = await http('https://hn.algolia.com/api/v1/search_by_date?tags=story&hitsPerPage=10&query=' + encodeURIComponent('\"' + TITLE + '\"'));\n  const hits = (s.hits || []).filter(h => String(h.title || '').toLowerCase().includes(TITLE.toLowerCase()));\n  if (!hits.length) return [{ json: { __error: 'hn_freelancer: no thread found for \"' + TITLE + '\"' } }];\n  // Two people sometimes post the same month: take the latest month, then the busiest thread in it.\n  const month = String(hits[0].created_at || '').slice(0, 7);\n  story = hits.filter(h => String(h.created_at || '').slice(0, 7) === month).sort((a, b) => (b.num_comments || 0) - (a.num_comments || 0))[0];\n} catch (e) { return [{ json: { __error: 'hn_freelancer: search failed: ' + String(e.message || e).slice(0, 80) } }]; }\n\nlet item;\ntry { item = await http('https://hn.algolia.com/api/v1/items/' + story.objectID); }\ncatch (e) { return [{ json: { __error: 'hn_freelancer: thread fetch failed: ' + String(e.message || e).slice(0, 80) } }]; }\n\nconst kids = Array.isArray(item.children) ? item.children : [];\nconst out = [];\nfor (const k of kids) {\n  const t = text(k.text);\n  if (!/^seeking freelancer/i.test(t)) continue;\n  const firstLine = t.split('\\n')[0].replace(/^seeking freelancer\\s*[:|-]?\\s*/i, '').trim();\n  out.push({ json: {\n    post_key: 'hn:' + k.id, platform: 'hn_freelancer', url: 'https://news.ycombinator.com/item?id=' + k.id,\n    title: (firstLine || 'SEEKING FREELANCER').slice(0, 300), body_text: t.slice(0, 4000),\n    poster: String(k.author || ''), poster_company: '', posted_at: k.created_at || null,\n    reply_count: Array.isArray(k.children) ? k.children.length : null, __source: 'hn_freelancer'\n  } });\n}\nreturn out.concat([{ json: { __stats: 'hn_freelancer: thread=' + story.objectID + ' top_level=' + kids.length + ' hiring=' + out.length } }]);\n"
+      }
+    },
+    {
+      "id": "6018c18f-8629-488a-bc0f-57a72ece42f5",
+      "name": "Load Manual Gigs",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        896,
+        384
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "select post_key, platform, url, title, body_text, poster, poster_company, gtm_iso(posted_at) as posted_at, reply_count, 'manual' as __source\nfrom gig_posts\nwhere status = 'new' and (platform = 'manual' or gig_score is null)\n  and coalesce(posted_at, first_seen_at) > now() - interval '14 days'\norder by first_seen_at desc\nlimit 50;"
+      },
+      "credentials": {
+        "postgres": {
+          "name": "Neon GTM"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "708b317c-e11a-4966-8e07-6535a786e6e2",
+      "name": "Fetch Seen Gigs",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        1344,
+        192
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {},
+        "query": "select post_key, status from gig_posts where status in ('drafted','sent','replied','won','lost','expired');"
+      },
+      "credentials": {
+        "postgres": {
+          "name": "Neon GTM"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "b937e722-da19-40ef-ae3e-e405c8bcc8d5",
+      "name": "Gig Gates",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1568,
+        192
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Gig Gates (Code node, Run Once for All Items). Sprint 15, ADR-116.\n// Normalizes every post from Merge Posts, then runs the fixed gates in plan order, before any LLM call:\n// seen, intent, freshness, crowding, veto, stack, budget. Every drop is counted.\n// Gated posts keep status gated_out plus gate_reason (they are still upserted, for telemetry and dedupe).\n// Seen posts (already drafted, sent, answered or expired) are counted and dropped here.\nconst cfg = $('Load Config').first().json.config || {};\nconst G = cfg.gig || {};\nconst MAX_AGE_H = Number(G.max_age_hours ?? 72);\nconst MAX_REPLIES = Number(G.max_replies ?? 25);\nconst MIN_RATE = G.min_hourly_usd === null || G.min_hourly_usd === undefined || G.min_hourly_usd === '' ? null : Number(G.min_hourly_usd);\nconst VETO = (G.veto_keywords || []).map(s => String(s).toLowerCase()).filter(Boolean);\nconst STACK_KW = (G.stack_keywords || []).map(s => String(s).toLowerCase()).filter(Boolean);\nconst MY_STACK = (G.my_stack || []).map(String).filter(Boolean);\n\nconst esc = s => String(s).replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');\nconst word = (kw) => new RegExp('(^|[^a-z0-9])' + esc(kw.toLowerCase()) + '([^a-z0-9]|$)', 'i');\nconst clean = s => String(s == null ? '' : s).replace(/\\r/g, '').replace(/[ \\t]+/g, ' ').replace(/\\n{3,}/g, '\\n\\n').trim();\n\n// ---------- inputs ----------\nconst sourceNotes = [];\nconst raw = [];\nfor (const it of $('Merge Posts').all()) {\n  const j = it.json || {};\n  if (j.__skipped) { sourceNotes.push(String(j.__skipped)); continue; }\n  if (j.__error) { sourceNotes.push('ERROR ' + String(j.__error)); continue; }\n  if (j.__stats) { sourceNotes.push(typeof j.__stats === 'string' ? j.__stats : JSON.stringify(j.__stats)); continue; }\n  if (j.post_key) raw.push(j);\n}\nconst seen = new Map();\nfor (const it of $('Fetch Seen Gigs').all()) { const j = it.json || {}; if (j.post_key) seen.set(String(j.post_key), String(j.status || '')); }\n\n// One row per post_key; the longest body wins (a post can arrive by mail and by a manual add).\nconst byKey = new Map();\nfor (const r of raw) {\n  const k = String(r.post_key).trim();\n  const prev = byKey.get(k);\n  if (!prev || String(r.body_text || '').length > String(prev.body_text || '').length) byKey.set(k, r);\n}\n\nconst C = { fetched: byKey.size, already_seen: 0, intent_for_hire: 0, intent_unclear: 0, stale: 0, crowded: 0,\n            vetoed: 0, stack_miss: 0, budget_low: 0, passed: 0 };\n\n// ---------- intent (ADR-116) ----------\nconst TAG_HIRING = /\\[(hiring|paid|job|task|gig|hire)\\]/i;\nconst TAG_FOR_HIRE = /\\[(for hire|available|offering|seeking work)\\]/i;\nconst FOR_HIRE = /\\bfor hire\\b|available for (hire|work)|seeking work|open to work|\\bi'?m available\\b|\\bhire me\\b|offering my services|my services/i;\nconst HIRING = /\\bhiring\\b|looking for|seeking (a |an )?(freelancer|developer|builder|expert|consultant|engineer)|\\bneed (an? |help|someone)|\\bwanted\\b|paid (job|task|trial|project)|\\bcontract\\b|\\bbudget\\b|\\bwho can\\b/i;\n\n// ---------- extractors ----------\nconst EMAIL = /\\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}\\b/i;\nconst DM = /\\b(dm|pm) me\\b|send me a (dm|pm|message)|direct message|message me|reach out (to me )?(privately|directly)|via dm/i;\nconst RATE = /(?:\\$|usd\\s?|us\\$)\\s?(\\d{1,4}(?:\\.\\d+)?)\\s*(?:\\/\\s?h(?:ou)?r?\\b|per hour|an hour|hourly|\\/h\\b)|(\\d{1,4}(?:\\.\\d+)?)\\s?(?:usd|\\$)\\s*(?:\\/\\s?h(?:ou)?r?\\b|per hour|an hour|hourly)/i;\nconst BUDGET = /(?:budget|pay|paying|rate|fixed price|price)[^.\\n]{0,40}?(?:[$€£]\\s?\\d[\\d,.]*k?|\\d[\\d,.]*\\s?(?:usd|eur|gbp|dollars|euros))|[$€£]\\s?\\d[\\d,.]*k?(?:\\s?(?:\\/\\s?h(?:ou)?r?|per hour|hourly|fixed))?/i;\nconst REMOTE = /\\bremote\\b|\\basync\\b|anywhere|\\b(eu|uk|cet|gmt|bst|emea)\\b|europe|time ?zone/i;\n\nconst out = [];\nconst nowMs = Date.now();\nfor (const [k, r] of byKey) {\n  const title = clean(r.title).slice(0, 300);\n  const body = clean(r.body_text).slice(0, 4000);\n  const head = (title + '\\n' + body.slice(0, 300));\n  const all = (title + '\\n' + body).toLowerCase();\n  const posted = r.posted_at ? new Date(r.posted_at) : null;\n  const ageH = posted && !isNaN(posted.getTime()) ? (nowMs - posted.getTime()) / 3600000 : null;\n  const replies = r.reply_count === null || r.reply_count === undefined || r.reply_count === '' ? null : Number(r.reply_count);\n  const email = (body.match(EMAIL) || [''])[0];\n  const rate = body.match(RATE) || title.match(RATE);\n  const rateUsd = rate ? Number(rate[1] || rate[2]) : null;\n  const matched = MY_STACK.filter(t => word(t).test(all));\n  const stackHits = STACK_KW.filter(t => word(t).test(all));\n\n  const post = {\n    post_key: k, platform: r.platform, url: r.url, title, body_text: body,\n    poster: clean(r.poster).slice(0, 120), poster_company: clean(r.poster_company).slice(0, 120),\n    posted_at: posted && !isNaN(posted.getTime()) ? posted.toISOString() : null,\n    reply_count: Number.isFinite(replies) ? replies : null,\n    contact_email: email, contact_hint: email ? 'email' : (DM.test(body) ? 'dm_invited' : 'reply'),\n    stated_budget: ((body.match(BUDGET) || title.match(BUDGET) || [''])[0]).slice(0, 80),\n    remote_hint: ((all.match(REMOTE) || [''])[0]).slice(0, 40),\n    matched_stack: matched.join(', '),\n    intent: 'unclear', status: 'new', gate_reason: '',\n    __age_h: ageH === null ? null : Math.round(ageH * 10) / 10,\n    __stack_hits: stackHits.length, __rate_usd: rateUsd, __source: r.__source || r.platform\n  };\n\n  // 1. seen: already drafted, sent, answered or expired. Not upserted again.\n  const st = seen.get(k);\n  if (st) { C.already_seen++; continue; }\n\n  // 2. intent\n  if (TAG_HIRING.test(title)) post.intent = 'hiring';\n  else if (TAG_FOR_HIRE.test(title) || FOR_HIRE.test(head)) post.intent = 'for_hire';\n  else if (HIRING.test(head)) post.intent = 'hiring';\n  const gate = (reason, counter) => { post.status = 'gated_out'; post.gate_reason = reason; C[counter]++; };\n  if (post.intent === 'for_hire') gate('intent_for_hire', 'intent_for_hire');\n  else {\n    if (post.intent === 'unclear') C.intent_unclear++;\n    // 3. freshness, 4. crowding, 5. veto, 6. stack, 7. budget\n    if (ageH !== null && ageH > MAX_AGE_H) gate('stale', 'stale');\n    else if (post.reply_count !== null && post.reply_count > MAX_REPLIES) gate('crowded', 'crowded');\n    else {\n      const v = VETO.find(kw => word(kw).test(all));\n      if (v) gate('veto:' + v, 'vetoed');\n      else if (!stackHits.length && !matched.length) gate('stack_miss', 'stack_miss');\n      else if (MIN_RATE !== null && Number.isFinite(MIN_RATE) && rateUsd !== null && rateUsd < MIN_RATE) gate('budget_low:' + rateUsd, 'budget_low');\n    }\n  }\n  if (post.status === 'new') C.passed++;\n  out.push({ json: post });\n}\n\nout.push({ json: { __gate_stats: C, __source_notes: sourceNotes.slice(0, 10) } });\nreturn out;\n"
+      }
+    },
+    {
+      "id": "6fc8e650-60b4-43e4-ae98-5c6de371b33c",
+      "name": "Score Gigs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1792,
+        192
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Score Gigs (Code node, Run Once for All Items). Sprint 15.\n// Scores every post that passed Gig Gates (0 to 100, written to score_breakdown) and packs all posts,\n// gated ones included, into one item for Upsert Gig Posts. Also hands the draft and expiry parameters on.\n//   gig_score = 0.35*stack_fit + 0.20*intent + 0.15*freshness + 0.15*competition + 0.10*budget_signal + 0.05*remote_fit (+10 bonus)\nconst cfg = $('Load Config').first().json.config || {};\nconst G = cfg.gig || {};\nconst T = (cfg.lead_tracks || {}).gig_post || {};\nconst MIN_RATE = G.min_hourly_usd === null || G.min_hourly_usd === undefined || G.min_hourly_usd === '' ? null : Number(G.min_hourly_usd);\n\nconst items = $input.all().map(i => i.json);\nconst stats = Object.assign({}, (items.find(j => j.__gate_stats) || {}).__gate_stats || {});\nconst notes = (items.find(j => j.__source_notes) || {}).__source_notes || [];\nconst posts = items.filter(j => j && j.post_key);\n\nconst BONUS = /\\bagency\\b|our clients|white[- ]label|\\bongoing\\b|long[- ]term|retainer|more work|future projects/i;\nconst PAID_TRIAL = /paid (trial|test|task)|trial task/i;\n\nlet scored = 0;\nconst packed = posts.map(p => {\n  const row = Object.assign({}, p);\n  if (row.status === 'new') {\n    const n = String(row.matched_stack || '').split(',').map(s => s.trim()).filter(Boolean).length;\n    const stack = n >= 3 ? 100 : n === 2 ? 75 : n === 1 ? 50 : 25;           // 25: passed on a stack keyword only\n    const intent = row.intent === 'hiring' ? 100 : 40;\n    const age = row.__age_h;\n    const fresh = age === null ? 50 : age < 12 ? 100 : age < 24 ? 80 : age < 48 ? 50 : 20;\n    const r = row.reply_count;\n    const comp = r === null ? 70 : r <= 3 ? 100 : r <= 10 ? 70 : 40;          // unknown replies (mail source) = 70\n    const text = row.title + '\\n' + row.body_text;\n    const budget = PAID_TRIAL.test(text) || (row.__rate_usd !== null && (MIN_RATE === null || row.__rate_usd >= MIN_RATE)) ? 100 : 50;\n    const remote = row.remote_hint ? 100 : 60;\n    const bonus = BONUS.test(text) ? 10 : 0;\n    const total = Math.max(0, Math.min(100, Math.round(0.35 * stack + 0.20 * intent + 0.15 * fresh + 0.15 * comp + 0.10 * budget + 0.05 * remote + bonus)));\n    row.gig_score = total;\n    row.score_breakdown = `stack=${stack} intent=${intent} fresh=${fresh} comp=${comp} budget=${budget} remote=${remote} bonus=${bonus} -> ${total}`;\n    scored++;\n  } else {\n    row.gig_score = null;\n    row.score_breakdown = '';\n  }\n  for (const k of Object.keys(row)) if (k.startsWith('__')) delete row[k];\n  return row;\n});\nstats.scored = scored;\n\nconst on = G.enabled !== false && T.enabled !== false;\nconst minScore = Number(G.min_score ?? 60);\nconst maxAge = Number(G.max_age_hours ?? 72);\nconst maxDrafts = on ? Math.max(0, Math.min(20, Number(G.max_drafts_per_run ?? 2))) : 0;\n\nreturn [{ json: {\n  posts: packed,\n  stats,\n  source_notes: notes,\n  draft_params: [minScore, maxAge, maxDrafts],\n  expire_hours: Math.max(1, maxAge * 2),\n  enabled: on\n} }];\n"
+      }
+    },
+    {
+      "id": "85dd53f7-7d01-4b0f-8940-1919da7b1142",
+      "name": "Upsert Gig Posts",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        2016,
+        192
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select gtm_gig_upsert($1::jsonb) as result;",
+        "options": {
+          "queryReplacement": "={{ [ JSON.stringify($json.posts) ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "name": "Neon GTM"
+        }
+      },
+      "executeOnce": true
+    },
+    {
+      "id": "c4b301a8-ad7e-4144-9294-1e6fc79e862f",
+      "name": "Expire Old Gigs",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        2240,
+        192
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select gtm_gig_expire($1::int) as result;",
+        "options": {
+          "queryReplacement": "={{ [ $('Score Gigs').first().json.expire_hours ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "name": "Neon GTM"
+        }
+      },
+      "executeOnce": true
+    },
+    {
+      "id": "7a13d421-e0f7-4842-82b8-e1df00ef190f",
+      "name": "Select Gigs to Draft",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        2464,
+        192
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "options": {
+          "queryReplacement": "={{ $('Score Gigs').first().json.draft_params }}"
+        },
+        "query": "select g.post_key, g.platform, g.url, g.title, g.body_text, g.poster, g.poster_company, gtm_iso(g.posted_at) as posted_at,\n       g.reply_count, g.contact_email, g.contact_hint, g.stated_budget, g.remote_hint, g.matched_stack, g.intent,\n       g.gig_score, g.score_breakdown\nfrom gig_posts g\nwhere g.status = 'new' and g.gig_score >= $1::int\n  and coalesce(g.posted_at, g.first_seen_at) > now() - make_interval(hours => $2::int)\n  and not exists (select 1 from outreach_queue q\n                  where q.lead_track = 'gig_post' and q.account_id = 'gig:' || g.post_key\n                    and q.approval_status in ('pending','edited','approved','needs_redraft'))\norder by g.gig_score desc, g.posted_at desc nulls last\nlimit $3::int;"
+      },
+      "credentials": {
+        "postgres": {
+          "name": "Neon GTM"
+        }
+      },
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "id": "b2d1084f-2d2e-472e-ab4a-6e1838edaf4a",
+      "name": "Draft Gig Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2688,
+        192
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Draft Gig Reply (Code node, Run Once for All Items). Sprint 15.\n// Drafts a short reply for each post from Select Gigs to Draft, validated by fixed rules (gig validator), one repair\n// retry per provider, then needs_redraft. The LLM router section is copied verbatim from Draft Outreach (ADR-115):\n// keep both in sync until an LLM Router sub-workflow exists. Nothing is sent: drafts go to the review console.\nconst cfg = $('Load Config').first().json.config || {};\nconst O = cfg.outreach || {};\nconst L = O.llm || {};\n\n// ---------- settings (all overridable from config.outreach.llm) ----------\nconst T0 = Date.now();\nconst TIMEOUT = Math.max(5000, Number(L.timeout_ms || 40000));\nconst TEMP = Number(L.temperature ?? 0.3);\nconst PACE_MS = Math.max(0, Number(L.politeness_ms ?? 6000));          // pause between drafts\nconst MAX_OUT = Math.max(600, Number(L.max_output_tokens || 1500));    // includes reasoning tokens\nconst MAX_WAIT_S = Math.max(0, Number(L.max_wait_s ?? 20));            // longest single wait on a 429\nlet WAIT_BUDGET_MS = Math.max(0, Number(L.wait_budget_ms ?? 90000));   // total 429 waiting per run\nconst RUN_BUDGET_MS = Math.max(60000, Number(L.run_budget_ms || 240000)); // stay under the Code node time limit\nconst SITE = Object.assign({ enabled: true, timeout_ms: 8000 }, O.site_facts || {});\n\nconst SENDER = String(O.sender_name || 'Mohamed');\nconst CTA = String(O.cta || 'Open to a 2-minute workflow example relevant to your stack?');\nconst PROOFS = (O.proof_points && O.proof_points.length) ? O.proof_points : ['Built a federated B2B GTM SaaS platform with FastAPI, Supabase and LLM routing'];\nconst WATCH = (O.tool_watchlist || ['hubspot','salesforce','pipedrive','shopify','stripe','intercom','calendly','google analytics','zapier','slack','mixpanel','snowflake','zendesk','marketo','salesloft','airtable']).map(s => String(s).toLowerCase());\nconst W = { total: [Number((O.words || {}).min || 70), Number((O.words || {}).max || 120)], note: [20, 40] };\nconst NOTES_MAX = 600;   // risk_notes length. Sprint 14 adds 5 flags, so the cap went from 450 to 600 to keep the llm_errors readable.\n\nconst sleep = ms => new Promise(r => setTimeout(r, ms));\nconst wc = s => String(s || '').trim().split(/\\s+/).filter(Boolean).length;\nconst norm = s => String(s == null ? '' : s).replace(/[‐‑‒–]/g, '-').replace(/\\s*—\\s*/g, ' - ').replace(/[‘’]/g, \"'\").replace(/[“”]/g, '\"').replace(/\\s+\\n/g, '\\n').replace(/[ ]{2,}/g, ' ').trim();\nconst has = (hay, needle) => new RegExp('(^|[^a-z0-9])' + needle.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&') + '([^a-z0-9]|$)', 'i').test(hay);\n\n// ---------- provider registry ----------\n// Every provider except Gemini speaks the OpenAI chat format, so adding one is a line of config, not new code.\nconst PRESETS = {\n  groq:       { kind: 'openai', url: 'https://api.groq.com/openai/v1/chat/completions', key: 'GROQ_API_KEY',       model: L.groq_model || 'openai/gpt-oss-120b' },\n  mistral:    { kind: 'openai', url: 'https://api.mistral.ai/v1/chat/completions',      key: 'MISTRAL_API_KEY',    model: L.mistral_model || 'mistral-small-latest' },\n  cerebras:   { kind: 'openai', url: 'https://api.cerebras.ai/v1/chat/completions',     key: 'CEREBRAS_API_KEY',   model: L.cerebras_model || 'gpt-oss-120b' },\n  openrouter: { kind: 'openai', url: 'https://openrouter.ai/api/v1/chat/completions',   key: 'OPENROUTER_API_KEY', model: L.openrouter_model || '' },\n  gemini:     { kind: 'gemini', url: 'https://generativelanguage.googleapis.com/v1beta/models/', key: 'GEMINI_API_KEY', model: L.gemini_model || 'gemini-3.8-flash' }\n};\n// Optional extra providers from config: outreach.llm.providers = { \"name\": { \"url\": \"...\", \"key_env\": \"NAME_API_KEY\", \"model\": \"...\" } }\nfor (const [name, p] of Object.entries(L.providers || {})) {\n  if (p && p.url && p.key_env) PRESETS[String(name).toLowerCase()] = { kind: p.kind === 'gemini' ? 'gemini' : 'openai', url: String(p.url), key: String(p.key_env), model: String(p.model || '') };\n}\n\n// A chain entry is \"provider\" or \"provider:model\". The second form lets one key use two models,\n// and each model has its own rate limit bucket.\nconst parseStep = (entry) => {\n  const s = String(entry || '').trim();\n  const i = s.indexOf(':');\n  const name = (i === -1 ? s : s.slice(0, i)).toLowerCase();\n  const preset = PRESETS[name];\n  if (!preset) return { id: s, error: 'unknown' };\n  const model = i === -1 ? preset.model : s.slice(i + 1).trim();\n  if (!model) return { id: s, error: 'no_model' };\n  return { id: i === -1 ? name : name + ':' + model, name, model, kind: preset.kind, url: preset.url, key: preset.key };\n};\nconst CHAIN = (Array.isArray(L.chain) && L.chain.length ? L.chain : ['groq', 'gemini', 'template'])\n  .filter(s => String(s).toLowerCase() !== 'template').map(parseStep);\n\n// Per-model extras that cut token use. If a provider rejects them (HTTP 400), the call is retried once without them.\nconst extrasFor = (step) => {\n  const m = step.model.toLowerCase();\n  const x = {};\n  if (step.name === 'mistral') x.max_tokens = MAX_OUT; else x.max_completion_tokens = MAX_OUT;\n  if (m.includes('gpt-oss')) { x.reasoning_effort = 'low'; if (step.name === 'groq') x.include_reasoning = false; }\n  else if (m.includes('qwen')) { x.reasoning_effort = 'low'; if (step.name === 'groq') x.reasoning_format = 'hidden'; }\n  return x;\n};\n\n// One HTTP call that never throws. Returns { status, headers, body, err }.\nconst http = async (opts) => {\n  try {\n    const res = await this.helpers.httpRequest(Object.assign({ json: true, timeout: TIMEOUT, returnFullResponse: true, ignoreHttpStatusErrors: true }, opts));\n    if (res && typeof res === 'object' && ('statusCode' in res || 'status' in res) && 'body' in res) {\n      let body = res.body;\n      if (typeof body === 'string') { try { body = JSON.parse(body); } catch (e) { /* keep text */ } }\n      return { status: Number(res.statusCode || res.status || 0), headers: res.headers || {}, body, err: '' };\n    }\n    return { status: 200, headers: {}, body: res, err: '' };   // helper returned the body directly\n  } catch (e) {\n    const msg = String((e && e.message) || e);\n    const m = msg.match(/status code (\\d{3})/i);\n    const r = (e && e.response) || {};\n    return { status: m ? Number(m[1]) : Number(r.status || e.httpCode || 0), headers: r.headers || {}, body: r.data || r.body || null, err: msg };\n  }\n};\nconst header = (h, name) => { const k = Object.keys(h || {}).find(x => x.toLowerCase() === name); return k ? h[k] : undefined; };\nconst errText = (body) => {\n  if (!body) return '';\n  if (typeof body === 'string') return body.slice(0, 120);\n  const e = body.error || body;\n  return String((e && (e.message || e.code || e.status)) || '').slice(0, 120);\n};\n// Seconds to wait after a 429: the retry-after header, else \"try again in 7.6s\" from the message, else 30.\nconst retryAfter = (r) => {\n  const h = Number(header(r.headers, 'retry-after'));\n  if (Number.isFinite(h) && h > 0) return h;\n  const m = (errText(r.body) + ' ' + r.err).match(/(?:try again|retry) in\\s+(?:(\\d+)m)?\\s*([\\d.]+)\\s*s/i);\n  if (m) return Number(m[1] || 0) * 60 + Number(m[2]);\n  return 30;\n};\n\nconst parseJSON = text => {\n  const t = String(text || '').trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();\n  const s = t.indexOf('{'), e = t.lastIndexOf('}');\n  if (s === -1 || e <= s) return null;\n  try { return JSON.parse(t.slice(s, e + 1)); } catch (err) { return null; }\n};\n\nconst noExtras = {};   // step id -> true once a provider has rejected the extras\nconst callStep = async (step, system, user) => {\n  const KEY = $env[step.key];\n  if (step.kind === 'gemini') {\n    const r = await http({ method: 'POST', url: step.url + step.model + ':generateContent',\n      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': KEY },\n      body: { systemInstruction: { parts: [{ text: system }] }, contents: [{ role: 'user', parts: [{ text: user }] }],\n              generationConfig: { temperature: TEMP, responseMimeType: 'application/json' } } });\n    if (r.status === 200) r.text = (((r.body || {}).candidates || [])[0]?.content?.parts || []).map(x => x.text || '').join('');\n    return r;\n  }\n  const base = { model: step.model, temperature: TEMP, response_format: { type: 'json_object' },\n                 messages: [{ role: 'system', content: system }, { role: 'user', content: user }] };\n  const send = (body) => http({ method: 'POST', url: step.url, headers: { Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' }, body });\n  let r = await send(noExtras[step.id] ? base : Object.assign({}, base, extrasFor(step)));\n  if (r.status === 400 && !noExtras[step.id]) { noExtras[step.id] = true; r = await send(base); r.retried_plain = true; }\n  if (r.status === 200) r.text = ((r.body || {}).choices || [])[0]?.message?.content;\n  return r;\n};\n\n// ================= gig drafting (Sprint 15) =================\n// Everything above this line is the Draft Outreach router, copied by scripts/s15/gig/build.mjs (ADR-115).\nconst G = cfg.gig || {};\nconst GT = (cfg.lead_tracks || {}).gig_post || {};\nconst GW = [Number((G.reply_words || {}).min || 60), Number((G.reply_words || {}).max || 130)];\nconst MY_STACK = (G.my_stack || []).map(String).filter(Boolean);\nconst LINKS = (G.portfolio_links || []).map(String).filter(u => /^https?:\\/\\//.test(u));\nconst GPROOFS = (GT.proof_points && GT.proof_points.length ? GT.proof_points : PROOFS).map(String);\nconst OFFERS = (Array.isArray(cfg.offers) ? cfg.offers : []).filter(o => o && o.id && o.label);\nconst PING_MIN = Number(G.discord_ping_min_score ?? 75);\nconst CONSOLE = String(G.console_url || (cfg.digest || {}).console_url || '').replace(/\\/+$/, '');\nconst PLATFORM_LABEL = { n8n_forum: 'n8n community forum', make_forum: 'Make community forum', hn_freelancer: 'Hacker News', manual: 'job post' };\n\nconst posts = $input.all().map(i => i.json).filter(r => r && r.post_key);\nconst gstats = { candidates: posts.length, drafted: 0, pending: 0, needs_redraft: 0, llm_calls: 0, llm_failures: 0, ping_eligible: 0 };\nif (!posts.length) return [{ json: { __row_type: 'stats', __stats: gstats } }];\n\n// Tools a reply might name. A tool is allowed when it is in gig.my_stack or the post itself names it.\nconst TOOLS = ['n8n', 'zapier', 'make.com', 'integromat', 'clay', 'hubspot', 'salesforce', 'pipedrive', 'apollo', 'airtable',\n  'notion', 'google sheets', 'supabase', 'postgres', 'neon', 'python', 'javascript', 'typescript', 'node.js', 'next.js', 'fastapi',\n  'openai', 'chatgpt', 'claude', 'gemini', 'langchain', 'retool', 'bubble', 'webflow', 'shopify', 'stripe', 'slack', 'twilio',\n  'instantly', 'lemlist', 'smartlead', 'phantombuster', 'apify', 'tavily', 'zoho', 'monday.com', 'clickup', 'asana', 'jira',\n  'mailchimp', 'activecampaign', 'klaviyo', 'gohighlevel', 'power automate', 'pabbly', 'firebase', 'mongodb', 'mysql', 'aws',\n  'docker', 'vapi', 'retell', 'elevenlabs', 'whatsapp', 'telegram', 'outreach.io', 'salesloft', 'close.com', 'attio', 'brevo'];\nconst toolsIn = (s) => TOOLS.filter(t => has(s, t));\nconst STOP = new Set(('about after again also because before being below build built could doing every first from going having ' +\n  'hello here help looking might more most need needed needs other ours please project projects should simple someone something ' +\n  'their there these thing things those thanks through today using want wanted where which while would yours anyone experience ' +\n  'freelancer developer expert hiring paid budget')\n  .split(' '));\nconst postTerms = (p) => {\n  const text = p.title + ' ' + p.body_text;\n  const tools = new Set(toolsIn(text).concat(MY_STACK.filter(t => has(text, t)).map(t => t.toLowerCase())));\n  const words = (String(p.title).toLowerCase().match(/[a-z][a-z0-9-]{4,}/g) || []).filter(w => !STOP.has(w));\n  return [...new Set([...tools, ...words])].slice(0, 12);\n};\nconst pickOffer = (p) => {\n  const text = (p.title + ' ' + p.body_text).toLowerCase();\n  let best = null, bestN = 0;\n  for (const o of OFFERS) {\n    if (o.id === 'white_label_overflow' && !/agency|white[- ]label|our clients|subcontract/.test(text)) continue;\n    const kws = Array.isArray(o.match) && o.match.length ? o.match : String(o.id).split('_');\n    const n = kws.filter(k => has(text, String(k))).length;\n    if (n > bestN) { best = o; bestN = n; }\n  }\n  return best || OFFERS.find(o => o.id === 'n8n_fix_build') || OFFERS[0] || { id: 'n8n_fix_build', label: 'Fix or build one n8n workflow, fixed scope' };\n};\nconst channelFor = (p) => p.contact_email ? 'email' : (p.contact_hint === 'dm_invited' ? 'forum_dm' : 'forum_reply');\n\nconst SYSTEM_G = [\n  'You write a short first reply to a public job post, or a short email to the person who posted it.',\n  'You write as ' + SENDER + ', an entry-level GTM and automation builder with real projects but no long track record. Be honest about that.',\n  'Return ONLY a JSON object: {\"reply\": \"...\", \"email_subject\": \"...\"}.',\n  'Rules for \"reply\":',\n  '- ' + GW[0] + ' to ' + GW[1] + ' words. Plain text, short paragraphs, no markdown, no bullet lists, no links, no sign-off (code adds the name and links).',\n  '- Greet the poster by first name if POSTER gives one, else \"Hi\". The first sentence restates their concrete problem in their own words.',\n  '- Name at least two specific things from the post: their tools, data, systems or steps (see POST_TERMS).',\n  '- Name only tools that are in ALLOWED_TOOLS.',\n  '- Use one proof point from PROOF_POINTS, said plainly. Never claim years of experience, seniority, \"expert in\", client counts or results that are not in PROOF_POINTS.',\n  '- Only use numbers that appear in the post or in PROOF_POINTS (you may say \"15-minute call\" or \"2-minute Loom\").',\n  '- Offer OFFER as a small, fixed-scope first step.',\n  '- Never mention prices, rates, fees, hourly amounts or money.',\n  '- End with exactly one concrete next step: a small paid trial task, a short Loom of how you would approach it, or a 15-minute call.',\n  '- No em dashes, no exclamation marks, no flattery, no \"I hope this finds you well\".',\n  'Rules for \"email_subject\": 3 to 8 words, specific to the post, no clickbait, no money.'\n].join('\\n');\n\nconst userGig = (p, offer) => {\n  const allowed = [...new Set(MY_STACK.concat(toolsIn(p.title + ' ' + p.body_text)))];\n  const rules = p.platform === 'n8n_forum' || p.platform === 'make_forum'\n    ? 'This answer goes to a community forum: a public reply in the thread, or a direct message only because the post invites one. Keep it useful to the poster, not an advert.'\n    : 'This answer goes to the poster directly.';\n  return [\n    'PLATFORM: ' + (PLATFORM_LABEL[p.platform] || p.platform) + '. ' + rules,\n    'CHANNEL: ' + p.__channel,\n    'POSTER: ' + (p.poster || 'unknown') + (p.poster_company ? ' at ' + p.poster_company : ''),\n    'POST_TITLE: ' + p.title,\n    'POST_TEXT: ' + String(p.body_text || '').slice(0, 1800),\n    'POST_TERMS: ' + postTerms(p).join(', '),\n    'MATCHED_STACK: ' + (p.matched_stack || 'none'),\n    'ALLOWED_TOOLS: ' + allowed.join(', '),\n    'PROOF_POINTS: ' + GPROOFS.slice(0, 3).join(' | '),\n    'OFFER: ' + offer.label\n  ].join('\\n');\n};\n\nconst SENIOR = /\\b\\d+\\+?\\s*(years?|yrs)\\b|\\bsenior\\b|\\bexpert in\\b|\\bmany clients\\b|\\bdozens of\\b|\\bhundreds of\\b|\\bseasoned\\b|\\bveteran\\b|\\bworld[- ]class\\b/i;\nconst MONEY = /[$€£]\\s?\\d|\\b\\d[\\d,.]*\\s?(usd|eur|gbp|dollars?|euros?)\\b|\\b\\d[\\d,.]*\\s?(\\/|per)\\s?(hour|hr|h)\\b|\\bhourly (rate|fee|pay)\\b|\\bpric(e|es|ing)\\b|\\bfees?\\b|\\binvoice\\b|\\bdiscount\\b/i;   // 'hourly sync' is not money\nconst NEXT = /paid trial|trial task|small paid|\\bloom\\b|15[- ]minute call|quick call|short call/i;\nconst LINKISH = /https?:\\/\\/|www\\./i;\nconst nums = s => (String(s).match(/\\d+(?:[.,]\\d+)?/g) || []);\nconst validateGig = (p, d) => {\n  const bad = [];\n  const r = norm((d && d.reply) || '');\n  const n = wc(r);\n  if (n < GW[0] || n > GW[1]) bad.push('words_' + n);\n  const terms = postTerms(p);\n  const hit = terms.filter(t => has(r, t));\n  if (hit.length < Math.min(2, terms.length)) bad.push('specific_' + hit.length);\n  const allowed = new Set(MY_STACK.map(s => s.toLowerCase()).concat(toolsIn(p.title + ' ' + p.body_text)));\n  const foreign = toolsIn(r).filter(t => !allowed.has(t));\n  if (foreign.length) bad.push('tool_not_in_stack:' + foreign.slice(0, 3).join('+'));\n  if (SENIOR.test(r)) bad.push('seniority_claim');\n  const okNums = new Set(nums(p.title + ' ' + p.body_text + ' ' + GPROOFS.join(' ')).concat(['15', '2', '1']));\n  const invented = nums(r).filter(x => !okNums.has(x));\n  if (invented.length) bad.push('invented_number:' + invented.slice(0, 3).join('+'));\n  if (LINKISH.test(r)) bad.push('llm_link');\n  if (!NEXT.test(r.slice(-220))) bad.push('no_next_step');\n  if (MONEY.test(r) || MONEY.test((d && d.email_subject) || '')) bad.push('money');\n  if (/!/.test(r)) bad.push('exclamation');\n  if (p.__channel === 'email') { const s = wc(norm((d && d.email_subject) || '')); if (s < 2 || s > 10) bad.push('subject_words'); }\n  return bad;\n};\nconst hintsGig = (p, bad) => bad.map(b =>\n  b.startsWith('words_') ? ' Write ' + GW[0] + ' to ' + GW[1] + ' words in \"reply\".' :\n  b.startsWith('specific_') ? ' Name at least two of: ' + postTerms(p).slice(0, 6).join(', ') + '.' :\n  b.startsWith('tool_not_in_stack') ? ' Remove tools that are not in ALLOWED_TOOLS.' :\n  b === 'seniority_claim' ? ' Remove any claim of years, seniority, expertise or client counts.' :\n  b.startsWith('invented_number') ? ' Remove numbers that are not in the post or the proof points.' :\n  b === 'llm_link' ? ' Remove all links.' :\n  b === 'no_next_step' ? ' End with one next step: a small paid trial task, a short Loom of the approach, or a 15-minute call.' :\n  b === 'money' ? ' Remove every price, rate or fee.' :\n  b === 'exclamation' ? ' No exclamation marks.' :\n  b === 'subject_words' ? ' \"email_subject\" must be 3 to 8 words.' : '').join('');\n\nconst templateGig = (p, offer) => {\n  const first = (String(p.poster || '').split(/[\\s._-]+/)[0] || '').replace(/[^A-Za-z]/g, '');\n  const tools = String(p.matched_stack || '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 2);\n  const reply = [\n    (first ? 'Hi ' + first + ',' : 'Hi,') + ' I read your post about ' + String(p.title).replace(/[.?!]+$/, '') + '.',\n    'I build ' + (tools.length ? tools.join(' and ') : 'automation') + ' workflows. One example: ' + GPROOFS[0].replace(/\\.$/, '') + '.',\n    'A good first step could be this: ' + offer.label.charAt(0).toLowerCase() + offer.label.slice(1) + ', limited to the part you described.',\n    'I can start with a small paid trial task, or send a short Loom of how I would approach it.'\n  ].join(' ');\n  return { reply, email_subject: String(p.title).slice(0, 60) };\n};\n\n// ---------- run ----------\nconst cooldown = {};\nconst hardFails = {};\nconst out = [];\nlet firstCall = true;\n\nfor (let pi = 0; pi < posts.length; pi++) {\n  const p = posts[pi];\n  if (Date.now() - T0 > RUN_BUDGET_MS) { gstats.left_for_next_run = posts.length - pi; break; }\n  p.title = String(p.title || ''); p.body_text = String(p.body_text || '');\n  p.__channel = channelFor(p);\n  const offer = pickOffer(p);\n  if (!firstCall) await sleep(PACE_MS);\n  firstCall = false;\n\n  let d = null, provider = 'template', calls = 0, fails = 0;\n  const errs = [];\n  for (const step of CHAIN) {\n    if (step.error) { errs.push(step.id + ':' + step.error); continue; }\n    if (!$env[step.key]) { errs.push(step.id + ':key_missing'); fails++; continue; }\n    if (cooldown[step.id] && Date.now() < cooldown[step.id]) { errs.push(step.id + ':cooling_down'); continue; }\n    let repair = '', waits = 0, transient = 0;\n    for (let attempt = 0; attempt < 4 && !d; attempt++) {\n      calls++;\n      const r = await callStep(step, SYSTEM_G, userGig(p, offer) + repair);\n      if (r.retried_plain) errs.push(step.id + ':extras_rejected_retried_plain');\n      if (r.status === 200) {\n        hardFails[step.id] = 0;\n        const j = parseJSON(r.text);\n        const bad = j ? validateGig(p, j) : ['unparseable_json'];\n        if (!bad.length) { d = j; provider = step.id; break; }\n        fails++; errs.push(step.id + ':invalid:' + bad.join('|').slice(0, 80));\n        if (repair) break;                                   // one repair attempt per provider\n        repair = '\\n\\nYOUR PREVIOUS ANSWER WAS REJECTED FOR: ' + bad.join('|') + '.' + hintsGig(p, bad) + ' Return the full JSON again with these problems fixed.';\n        continue;\n      }\n      fails++;\n      if (r.status === 429) {\n        const wait = retryAfter(r);\n        const waitMs = Math.ceil(wait * 1000) + 500;\n        if (wait <= MAX_WAIT_S && waits < 2 && waitMs <= WAIT_BUDGET_MS) {\n          errs.push(step.id + ':429_waited_' + Math.ceil(wait) + 's');\n          WAIT_BUDGET_MS -= waitMs; waits++;\n          await sleep(waitMs);\n          continue;\n        }\n        cooldown[step.id] = Date.now() + Math.min(wait, 300) * 1000;\n        errs.push(step.id + ':429_cooldown_' + Math.ceil(Math.min(wait, 300)) + 's');\n        break;\n      }\n      if ([400, 401, 403, 404].includes(r.status)) {\n        cooldown[step.id] = Date.now() + 3600000;\n        errs.push(step.id + ':http_' + r.status + ':' + (errText(r.body) || r.err).slice(0, 70));\n        break;\n      }\n      errs.push(step.id + ':' + (r.status ? 'http_' + r.status : 'network') + ':' + (errText(r.body) || r.err).slice(0, 50));\n      if (r.status >= 500 && transient < 1) { transient++; await sleep(3000); continue; }\n      hardFails[step.id] = (hardFails[step.id] || 0) + 1;\n      if (hardFails[step.id] >= 2) cooldown[step.id] = Date.now() + 120000;\n      break;\n    }\n    if (d) break;\n  }\n\n  let status = 'pending';\n  if (!d) { d = templateGig(p, offer); status = 'needs_redraft'; }\n  const finalBad = validateGig(p, d);\n  if (finalBad.length) { status = 'needs_redraft'; errs.push('final_invalid:' + finalBad.join('|')); }\n\n  const reply = norm(d.reply);\n  const sentences = reply.split(/(?<=[.?!])\\s+/).filter(Boolean);\n  // Links are added by code after validation, never by the LLM (plan: gig validator, links rule).\n  const signature = '\\n\\n' + SENDER + (LINKS.length ? '\\n' + LINKS.slice(0, 2).join('\\n') : '');\n  const posted = p.posted_at ? new Date(p.posted_at) : null;\n  const ageH = posted && !isNaN(posted.getTime()) ? Math.max(0, Math.round((Date.now() - posted.getTime()) / 3600000)) : null;\n  const outreachId = 'gig_' + String(p.post_key).replace(/[^a-z0-9]+/gi, '_') + '_' + Date.now().toString(36);\n  const score = Number(p.gig_score || 0);\n  const flags = ['track=gig_post', 'provider=' + provider, 'gig_score=' + score, 'channel=' + p.__channel, 'offer=' + offer.id,\n    'matched=' + (String(p.matched_stack || '').replace(/,\\s*/g, '+') || 'none'), 'intent=' + (p.intent || 'unclear')];\n  if (provider === 'template') flags.push('template_review_hard');\n\n  out.push({ json: {\n    run_date: new Date().toISOString(),\n    outreach_id: outreachId,\n    account_id: 'gig:' + p.post_key, contact_id: 'gig:' + p.post_key,\n    company_name: (p.poster_company || p.poster || PLATFORM_LABEL[p.platform] || 'gig post').slice(0, 120),\n    contact_name: String(p.poster || '').slice(0, 120),\n    channel: p.__channel, angle: 'gig_reply',\n    trigger: (p.title + (posted && !isNaN(posted.getTime()) ? ' (posted ' + posted.toISOString().slice(0, 10) + ')' : '')).slice(0, 200),\n    pain_point: p.title.slice(0, 200), value_proposition: offer.label, proof_point: GPROOFS[0] || '',\n    cta: (sentences[sentences.length - 1] || '').slice(0, 200),\n    email_subject: norm(d.email_subject || p.title).slice(0, 120), first_line: (sentences[0] || '').slice(0, 300),\n    message_draft: reply + signature,\n    follow_up_1: '', follow_up_2: '', follow_up_3: '', linkedin_note: '',\n    risk_notes: (flags.join('; ') + (errs.length ? ' | llm_errors: ' + errs.join(' ; ') : '')).slice(0, NOTES_MAX),\n    approval_status: status, reject_scope: '', send_status: 'not_sent', sent_at: '', reply_received: '',\n    notes: ('Post: ' + p.url + (p.score_breakdown ? ' | ' + p.score_breakdown : '')).slice(0, 450),\n    llm_provider: provider, llm_calls: calls, llm_failures: fails,\n    angle_basis: ('gig post: ' + p.title).slice(0, 200), account_type: 'gig', product_category: '',\n    lead_track: 'gig_post',\n    // Not columns: gtm_insert_draft ignores them. Hot Gig Ping reads them (title, platform, age, score, link; no email, no body).\n    __gig_score: score, __title: p.title.slice(0, 150), __platform: PLATFORM_LABEL[p.platform] || p.platform,\n    __post_url: p.url, __age_h: ageH, __ping: score >= PING_MIN, __console_link: CONSOLE ? CONSOLE + '/gigs' : ''\n  } });\n  gstats.drafted++; gstats[status === 'pending' ? 'pending' : 'needs_redraft']++;\n  gstats.llm_calls += calls; gstats.llm_failures += fails;\n  if (score >= PING_MIN) gstats.ping_eligible++;\n}\n\nout.push({ json: { __row_type: 'stats', __stats: gstats } });\nreturn out;\n"
+      }
+    },
+    {
+      "id": "8994cbe0-39af-4624-baf7-b4541b40da18",
+      "name": "Route Drafts",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        2912,
+        176
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "renameOutput": true,
+              "outputKey": "drafts",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.outreach_id }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "exists",
+                      "singleValue": true
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "renameOutput": true,
+              "outputKey": "hot",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.__ping }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "renameOutput": true,
+              "outputKey": "stats",
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose"
+                },
+                "combinator": "and",
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.__row_type }}",
+                    "rightValue": "stats",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {
+          "allMatchingOutputs": true
+        }
+      }
+    },
+    {
+      "id": "36a282b5-d10e-4db8-a93d-f23e06fdbb49",
+      "name": "Insert Gig Drafts",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        3136,
+        0
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select * from gtm_insert_draft($1::jsonb);",
+        "options": {
+          "queryReplacement": "={{ [ JSON.stringify($json) ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "name": "Neon GTM"
+        }
+      }
+    },
+    {
+      "id": "c5459054-d850-4ef9-9503-5cf5e023dede",
+      "name": "Hot Gig Ping",
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        3136,
+        192
+      ],
+      "parameters": {
+        "authentication": "webhook",
+        "content": "=Hot gig ({{ $json.__gig_score }}): {{ $json.__title }}\n{{ $json.__platform }}, {{ $json.__age_h }} h old\n{{ $json.__post_url }}\nReview: {{ $json.__console_link }}"
+      },
+      "credentials": {
+        "discordWebhookApi": {
+          "name": "Personal GTM Engine Discord Webhook"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "webhookId": "bf5c1fe3-7528-410b-86b0-48259a4594c2"
+    },
+    {
+      "id": "1daa99d6-ee4d-40d8-909d-1f8100ef6d39",
+      "name": "Gig Run Stats",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3136,
+        384
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Gig Run Stats (Code node, Run Once for All Items). Sprint 15.\n// Builds the one gig_ops row for this run from the gate counters, the upsert and expiry results and the\n// drafting stats. Write Gig Ops inserts it. Read it on the console Runs page (gig_ops tab).\nconst safeFirst = (name) => { try { return $(name).first().json || {}; } catch (e) { return {}; } };\nconst safeAll = (name) => { try { return $(name).all().map(i => i.json); } catch (e) { return []; } };\nconst cfg = safeFirst('Load Config').config || {};\nconst score = safeFirst('Score Gigs');\nconst gates = score.stats || {};\nconst upsert = (safeFirst('Upsert Gig Posts').result) || {};\nconst expire = (safeFirst('Expire Old Gigs').result) || {};\nconst dstats = ($input.first().json || {}).__stats || {};\nconst pinged = safeAll('Hot Gig Ping').length;\n\nconst errors = (score.source_notes || []).filter(s => /^ERROR /.test(String(s)));\nif (dstats.llm_failures) errors.push('llm_failures=' + dstats.llm_failures);\nif (dstats.left_for_next_run) errors.push('run_budget_hit: ' + dstats.left_for_next_run + ' left');\n\nconst now = new Date();\nconst row = {\n  run_id: 'gig_' + now.toISOString().replace(/[-:.TZ]/g, '').slice(0, 14) + '_' + Math.random().toString(36).slice(2, 6),\n  run_at: now.toISOString(),\n  config_rev: String(cfg.rev || ''),\n  fetched: Number(gates.fetched || 0),\n  intent_for_hire: Number(gates.intent_for_hire || 0),\n  intent_unclear: Number(gates.intent_unclear || 0),\n  stale: Number(gates.stale || 0),\n  crowded: Number(gates.crowded || 0),\n  vetoed: Number(gates.vetoed || 0),\n  stack_miss: Number(gates.stack_miss || 0),\n  budget_low: Number(gates.budget_low || 0),\n  already_seen: Number(gates.already_seen || 0),\n  scored: Number(gates.scored || 0),\n  drafted: Number(dstats.drafted || 0),\n  pinged,\n  expired: Number(expire.expired || 0),\n  errors: errors.join(' | ').slice(0, 1000),\n  source_stats: JSON.stringify({\n    sources: score.source_notes || [],\n    upsert: { inserted: Number(upsert.inserted || 0), updated: Number(upsert.updated || 0) },\n    superseded: Number(expire.superseded || 0),\n    drafts: { pending: Number(dstats.pending || 0), needs_redraft: Number(dstats.needs_redraft || 0), candidates: Number(dstats.candidates || 0) },\n    llm: { calls: Number(dstats.llm_calls || 0), failures: Number(dstats.llm_failures || 0) }\n  }).slice(0, 4000)\n};\nreturn [{ json: row }];\n"
+      }
+    },
+    {
+      "id": "312ab988-ace9-4f40-bb7b-d1160e697679",
+      "name": "Write Gig Ops",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        3360,
+        384
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "insert into gig_ops select (jsonb_populate_record(null::gig_ops, $1::jsonb)).*\non conflict (run_id) do nothing\nreturning run_id;",
+        "options": {
+          "queryReplacement": "={{ [ JSON.stringify($json) ] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "name": "Neon GTM"
+        }
+      },
+      "executeOnce": true
+    },
+    {
+      "id": "5c21a427-6420-479b-bb27-88dd1c181043",
+      "name": "README",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -560,
+        -140
+      ],
+      "parameters": {
+        "color": 7,
+        "width": 460,
+        "height": 640,
+        "content": "## GTM Gig Finder\nSprint 15 gig lane (ADR-114 to ADR-116). Finds public posts where someone hires an n8n, Clay, HubSpot or automation freelancer, gates and scores them with fixed rules, drafts one short reply per good post, and puts the drafts in the review console. Nothing is sent by the system.\n\n**Sources** (Phase 0: the forums forbid automated access)\n- Read Forum Mail: the forum's own notification emails. Off until you add a Gmail OAuth2 credential, set the n8n community Jobs category to Watching First Post and label the mails `gtm-gigs` with a Gmail filter. Then enable the node.\n- Load Manual Gigs: posts you add on the console Gigs page.\n- HN Freelancer Source: off in config (no hiring posts in 4 months).\n\n**Run:** manual, from GTM Run, or every 3 hours once you publish it (D7).\n**Results:** gig_posts and gig_ops in Neon; drafts in the console Queue (track Gig).\n**On failure:** GTM Engine: Error Alerts.\n\nColors: green = free, rule-based, orange = calls an LLM, blue = human step, gray = setup and telemetry"
+      }
+    },
+    {
+      "id": "0dac2bc2-1339-49cd-8b4e-b677e93e9f65",
+      "name": "Note 1 · Sources",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        620,
+        -140
+      ],
+      "parameters": {
+        "color": 4,
+        "width": 640,
+        "height": 660,
+        "content": "## 1 · Sources\nForum notification mail, HN (off) and manual adds. Every source returns a marker item when it has nothing, so Merge Posts always runs."
+      }
+    },
+    {
+      "id": "6dff3ac1-966f-462f-b6ea-8bc58faf8710",
+      "name": "Note 2 · Gate, score, store",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1290,
+        -140
+      ],
+      "parameters": {
+        "color": 4,
+        "width": 1100,
+        "height": 660,
+        "content": "## 2 · Gate, score, store\nFixed gates in order: seen, intent ([FOR HIRE] posts never get drafted), freshness, crowding, veto, stack, budget. Every drop is counted. All posts are upserted (gated ones too, for dedupe), old ones expire, then the best new posts without a live draft are selected."
+      }
+    },
+    {
+      "id": "07abc01c-0388-4dbb-bf94-10ea0c7a2b90",
+      "name": "Note 3 · Draft, ping, telemetry",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2420,
+        -140
+      ],
+      "parameters": {
+        "color": 2,
+        "width": 1160,
+        "height": 660,
+        "content": "## 3 · Draft, ping, telemetry\nDraft Gig Reply uses the engine's LLM router (copied, ADR-115) and the gig validator: words, two specifics from the post, stack whitelist, no seniority claims, no invented numbers, no links (code adds them), one next step, no money. One repair retry, then needs_redraft. Hot posts (score 75+) ping Discord with title, platform, age, score and link only. One gig_ops row per run."
+      }
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Config": {
+      "main": [
+        [
+          {
+            "node": "Load Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Fetch Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every 3 Hours": {
+      "main": [
+        [
+          {
+            "node": "Fetch Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Config": {
+      "main": [
+        [
+          {
+            "node": "Read Forum Mail",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "HN Freelancer Source",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Load Manual Gigs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Forum Mail": {
+      "main": [
+        [
+          {
+            "node": "Parse Forum Mail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Forum Mail": {
+      "main": [
+        [
+          {
+            "node": "Merge Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Posts": {
+      "main": [
+        [
+          {
+            "node": "Fetch Seen Gigs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HN Freelancer Source": {
+      "main": [
+        [
+          {
+            "node": "Merge Posts",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Load Manual Gigs": {
+      "main": [
+        [
+          {
+            "node": "Merge Posts",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Fetch Seen Gigs": {
+      "main": [
+        [
+          {
+            "node": "Gig Gates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gig Gates": {
+      "main": [
+        [
+          {
+            "node": "Score Gigs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Score Gigs": {
+      "main": [
+        [
+          {
+            "node": "Upsert Gig Posts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Gig Posts": {
+      "main": [
+        [
+          {
+            "node": "Expire Old Gigs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expire Old Gigs": {
+      "main": [
+        [
+          {
+            "node": "Select Gigs to Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Select Gigs to Draft": {
+      "main": [
+        [
+          {
+            "node": "Draft Gig Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Draft Gig Reply": {
+      "main": [
+        [
+          {
+            "node": "Route Drafts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Drafts": {
+      "main": [
+        [
+          {
+            "node": "Insert Gig Drafts",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Hot Gig Ping",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Gig Run Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gig Run Stats": {
+      "main": [
+        [
+          {
+            "node": "Write Gig Ops",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true,
+    "timezone": "Africa/Tunis",
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "meta": {
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp"
+  },
+  "nodeGroups": [],
+  "pinData": {},
+  "activeVersionId": null,
+  "versionCounter": 4,
+  "triggerCount": 0,
+  "sourceWorkflowId": null,
+  "tags": [],
+  "shared": [
+    {
+      "updatedAt": "2026-11-15T13:17:36.892Z",
+      "createdAt": "2026-11-15T13:17:36.892Z",
+      "role": "workflow:owner",
+      "workflowId": "rQ8R3zlIpw6U1bcD",
+      "projectId": "L1pxi50FthDHo7qn",
+      "project": {
+        "updatedAt": "2026-09-05T11:31:37.335Z",
+        "createdAt": "2026-09-05T11:28:49.261Z",
+        "id": "L1pxi50FthDHo7qn",
+        "name": "Mohamed Landolsi <you@example.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "customTelemetryTags": [],
+        "creatorId": "1342497f-ad6f-4029-bc21-3053bbd4c1ed"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": "S15: README and section notes",
+    "description": "Added nodes: README, Note 1 · Sources, Note 2 · Gate, score, store, Note 3 · Draft, ping, telemetry"
+  }
+}

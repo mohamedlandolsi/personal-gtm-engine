@@ -93,8 +93,10 @@ export function addMissing(dst, src, at = '', added = []) {
   return added;
 }
 
-const [mode, flag] = process.argv.slice(2);
-if (mode === 'example') {
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
+const [mode, flag] = isMain ? process.argv.slice(2) : ['__import__'];
+if (mode === '__import__') { /* imported by a test: export only */ }
+else if (mode === 'example') {
   const p = 'config/config.example.json';
   const j = JSON.parse(fs.readFileSync(p, 'utf8'));
   const added = addMissing(j, S15);
