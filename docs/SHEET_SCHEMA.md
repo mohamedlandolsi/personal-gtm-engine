@@ -58,16 +58,20 @@ key	value	type	description	updated_at
 Written by: You. Read by: Engine `Fetch Seeds`. Hand-picked target companies, read every engine run.
 
 ```text
-company_name	domain	website	industry	company_type	employee_count	location_raw	country	timezone_utc_offset	funding_stage	description	notes	status
+company_name	domain	website	industry	company_type	employee_count	location_raw	country	timezone_utc_offset	funding_stage	description	notes	status	lead_track	source
 ```
+
+Sprint 15: `lead_track` is `smb_direct` (blank means the same) or `agency_partner`. `source` names where a hand-picked row came from, for example `hubspot_directory`; blank means `seed`.
 
 ### `accounts`
 
 Written by: Engine (1 append, 5 updates), GTM Clay Bridge (`clay_trigger*`), Neon Sync (console vetoes). Read by: Engine, Contact Finder, Clay Email Queue, GTM Clay Bridge, Neon Sync. One row per company that passed the hard filters. `status = rejected` stops all further work on it.
 
 ```text
-run_date	source	account_id	company_name	domain	website	industry	company_type	employee_count	location_raw	country	timezone_utc_offset	funding_stage	final_score	priority	why_match	red_flags	score_breakdown	confidence	status	linkedin_url	tech_stack	funding_proxy_score	automation_need_score	enrichment_status	clay_summary	clay_status	clay_enriched_at	contact_feasibility_score	contact_status	clay_trigger	clay_trigger_source	clay_trigger_date
+run_date	source	account_id	company_name	domain	website	industry	company_type	employee_count	location_raw	country	timezone_utc_offset	funding_stage	final_score	priority	why_match	red_flags	score_breakdown	confidence	status	linkedin_url	tech_stack	funding_proxy_score	automation_need_score	enrichment_status	clay_summary	clay_status	clay_enriched_at	contact_feasibility_score	contact_status	clay_trigger	clay_trigger_source	clay_trigger_date	lead_track	source_meta
 ```
+
+Sprint 15 (ADR-113): `lead_track` is `smb_direct` or `agency_partner`; GTM Neon Sync turns a blank or unknown value into `smb_direct`. `source_meta` is a short JSON string from the partner directories (directory, slug, tier, services, languages, pricing band). `clay_trigger_source` can now also be `directory` (ADR-117).
 
 ### `contacts_queue`
 
