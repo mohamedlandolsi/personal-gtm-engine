@@ -54,7 +54,7 @@ export const S15 = {
       max_profiles_per_run: 10,                                            // pilot value; raise to 40 after the first run
       politeness_ms: 1500,
       clay: { enabled: true, max_pages: 7, base: 'https://www.clay.com', list_path: '/en/experts', profile_path: '/en/experts/partner/' },
-      n8n: { enabled: true, max_pages: 2, base: 'https://experts.n8n.io', list_path: '/', profile_path: '/partner/' },
+      n8n: { enabled: false, max_pages: 2, base: 'https://experts.n8n.io', list_path: '/', profile_path: '/partner/' },   // off since 2026-11-16: HTTP 403 (ADR-119)
       make: { enabled: false, max_pages: 5 }                               // D2; no-go for automation (Phase 0)
     }
   },

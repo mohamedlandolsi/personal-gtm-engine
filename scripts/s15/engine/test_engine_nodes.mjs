@@ -113,6 +113,7 @@ const seenRows = [...new Set(nuxtSlugs(clayList).map(s => 'clay:' + s).concat(nu
   .filter(k => k !== 'clay:cs2' && k !== 'n8n:2v-automation').map(k => ({ profile_key: k }));
 const pdCfg = JSON.parse(JSON.stringify(config)); pdCfg.sources.partner_directories.politeness_ms = 1000; pdCfg.sources.partner_directories.max_pages = 1;
 pdCfg.sources.partner_directories.clay.max_pages = 1; pdCfg.sources.partner_directories.n8n.max_pages = 1;
+pdCfg.sources.partner_directories.n8n.enabled = true;   // off in live config since 2026-11-16 (HTTP 403); the parser is still tested
 const T = Date.now();
 const pd = await run(src(NEW, 'Partner Directories Source'), { 'Load Config': [{ config: pdCfg }], 'Fetch Seen Profiles': seenRows }, [], pdHttp);
 const pdRows = pd.filter(j => j.company_name);
@@ -126,6 +127,13 @@ check('directories: source_meta has tier, services, languages, pricing slugs, co
 check('directories: location to time zone (San Jose, CA = -8; n8n office list picks one inside the window)', cs2.timezone_utc_offset === -8 && cs2.country === 'United States' && v2.timezone_utc_offset === -5, [cs2.timezone_utc_offset, v2.timezone_utc_offset, v2.location_raw]);
 check('directories: dated directory trigger (ADR-117)', /^Listed in the Clay experts directory \(Studio\): /.test(cs2.directory_trigger) && /^\d{4}-\d{2}-\d{2}$/.test(cs2.directory_trigger_date), cs2.directory_trigger);
 check('directories: stats line in the YC format, politeness respected', /partner_directories stats: pages=2 listed=\d+ seen=\d+ tier_out=\d+ fetched=2/.test(pd.at(-1).__skipped) && Date.now() - T >= 3000, pd.at(-1));
+{ // live config since 2026-11-16: n8n off, Clay on. No n8n request, Clay rows unchanged.
+  const c = JSON.parse(JSON.stringify(pdCfg)); c.sources.partner_directories.n8n.enabled = false; c.sources.partner_directories.politeness_ms = 0;
+  const before = urls.length;
+  const r = await run(src(NEW, 'Partner Directories Source'), { 'Load Config': [{ config: c }], 'Fetch Seen Profiles': seenRows }, [], pdHttp);
+  const asked = urls.slice(before);
+  check('directories: n8n off means no n8n request, Clay rows still returned', asked.length > 0 && asked.every(u => !/n8n\.io/.test(u)) && r.filter(j => j.company_name).every(j => j.source === 'clay_experts') && r.some(j => j.__profile_key === 'clay:cs2'), asked);
+}
 const off = JSON.parse(JSON.stringify(config)); off.sources.partner_directories.enabled = false;
 check('directories: off by config is a skip marker', (await run(src(NEW, 'Partner Directories Source'), { 'Load Config': [{ config: off }], 'Fetch Seen Profiles': [] }, []))[0].__skipped === 'partner_directories disabled by config');
 

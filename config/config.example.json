@@ -327,7 +327,7 @@
         "profile_path": "/en/experts/partner/"
       },
       "n8n": {
-        "enabled": true,
+        "enabled": false,
         "max_pages": 2,
         "base": "https://experts.n8n.io",
         "list_path": "/",

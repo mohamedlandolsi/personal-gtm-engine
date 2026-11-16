@@ -20,7 +20,7 @@ Decisions are in `docs/ADR.md` (ADR-113 to 119); the how is in `docs/ARCHITECTUR
 | Source | Track | How | Status |
 |---|---|---|---|
 | Clay experts directory (`www.clay.com/en/experts`) | `agency_partner` | `Partner Directories Source` reads the listing pages and each new profile once (`seen_directory_profiles`), from the page's embedded `__NUXT_DATA__` JSON, 1.5 s apart, at most `max_profiles_per_run` new profiles per run | On |
-| n8n experts directory (`experts.n8n.io`) | `agency_partner` | Same node and parser | On |
+| n8n experts directory (`experts.n8n.io`) | `agency_partner` | Same node and parser | Off since 2026-11-16: HTTP 403 in production (ADR-119 amendment) |
 | Make partners directory | `agency_partner` | Not built: Cloudflare challenge for non-browser clients | Off (D2) |
 | n8n community Jobs category | `gig_post` | The forum's own notification emails (Watching First Post), labelled `gtm-gigs` in Gmail, read by `Read Forum Mail`. No request to the forum: its terms forbid automated access | On once a Gmail credential exists |
 | Console **Add a post by hand** | `gig_post` | `gtm_gig_add()`; key `manual:<hash>`, or the forum topic key when the link is a forum topic | On |

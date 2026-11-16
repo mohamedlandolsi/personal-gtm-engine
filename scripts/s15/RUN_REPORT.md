@@ -112,7 +112,19 @@ it proves discovery, filters and scoring only. The first agency drafts with a re
 | 6 | One agency account approved, synced, property set; second sync writes nothing | Not run: no agency account exists in production yet. Outbox carries `gtm_lead_track` in the SQL test |
 | 7 | `GTM Run` calls the Gig Finder first; docs; schema close-out | Yes |
 
-## 7. Before the first real run (your steps)
+## 7. First production run (GTM Run exec 826, 2026-11-16 09:51 UTC)
+
+| Step | Result |
+|---|---|
+| Gig Finder (exec 827) | Success. `Read Forum Mail` ran with the Gmail credential and read 0 emails, so 0 posts; one `gig_ops` row |
+| Engine pass 1 (exec 829) | 3 accounts, 3 SMB drafts, 6 LLM calls with 3 failures; directories `pages=1 listed=29 tier_out=6 fetched=5 errors=1`, n8n listing HTTP 403 |
+| Contact Finder (exec 830) | Success |
+| Engine pass 2 (exec 831) | 3 accounts, 19 contacts; 5 seen Clay profiles skipped, 5 new fetched; n8n listing HTTP 403 again |
+| Result | `ok_queue_draining`, 31 accounts queued for contacts. Neon: 6 `agency_partner` accounts (scores 76 to 83), lead track kept by the published Neon Sync |
+
+Follow-ups: the n8n experts directory is turned off (config rev `console-20261116-1102`, ADR-119 amendment). The pilot caps were raised in rev `console-20261116-1056`. The published Gig Finder version predates enabling `Read Forum Mail`, so it needs one more publish for the schedule to read mail.
+
+## 8. Before the first real run (your steps)
 
 1. **Publish `GTM Neon Sync` first.** The published version does not send `lead_track`, and `gtm_sync_pull()` turns a
    missing value into `smb_direct`, so every 15-minute run of the old version would reset agency accounts in Neon to

@@ -134,7 +134,7 @@ Clay, when you use it: run `Clay Meter` before and after, run Clay tables by sel
 | `lead_tracks.agency_partner.exclude_tiers`, `exclude_pricing` | Clay Elite Studio, n8n Enterprise; `10k-a-month` | Directory tiers and pricing bands too large to need a junior builder |
 | `lead_tracks.agency_partner.proof_points`, `cta` | Your two proof sentences, one small-task question | Used in agency drafts only |
 | `sources.partner_directories.max_profiles_per_run` | 10 (pilot) | New directory profiles fetched per run. Raise to 40 after a clean first run |
-| `sources.partner_directories.clay.enabled`, `n8n.enabled` | true | One switch per directory; Make stays off (D2) |
+| `sources.partner_directories.clay.enabled`, `n8n.enabled` | true, false | One switch per directory. n8n is off since it answered HTTP 403 (ADR-119); Make stays off (D2) |
 | `gig.max_drafts_per_run` | 2 (pilot) | Gig replies drafted per run. Raise to 6 after a clean first run |
 | `gig.min_score`, `gig.discord_ping_min_score` | 60, 75 | Draft threshold and Discord ping threshold (D4) |
 | `gig.max_age_hours`, `gig.max_replies` | 72, 25 | Freshness and crowding gates |

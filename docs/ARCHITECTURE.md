@@ -118,7 +118,7 @@ Every stage is idempotent: the Data Table ledgers (`seen_accounts`, `seen_contac
 | Hacker News "Who is hiring" | Algolia API, two latest threads, strong-keyword gate | None (public API) |
 | YC company directory | Public directory by tag, active companies with a website | None (public data) |
 | Apollo company search | Code node, off by default (free plan returns nothing useful) | Credits only if enabled |
-| Clay experts and n8n experts directories (Sprint 15) | `Partner Directories Source`: listing pages, then each new profile once (`seen_directory_profiles`), data read from the page's embedded JSON. Rows get `lead_track = agency_partner` and `source_meta` | None (public pages) |
+| Clay experts and n8n experts directories (Sprint 15) | `Partner Directories Source`: listing pages, then each new profile once (`seen_directory_profiles`), data read from the page's embedded JSON. Rows get `lead_track = agency_partner` and `source_meta`. n8n experts is off since it answered HTTP 403 on 2026-11-16 (ADR-119) | None (public pages) |
 
 Hard filters run before any enrichment or LLM call: domain required, employee range, industry include/exclude, keyword include/exclude, UTC offset, company type, seen-before. Each rejection reason is counted in `ops.rejection_summary`. Agency rows use the `lead_tracks.agency_partner` filters instead (excluded tiers and pricing bands, required language, UTC offsets, stack keywords); `agency_pricing` and the other agency reasons are counted the same way.
 
