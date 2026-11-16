@@ -93,6 +93,23 @@ Consolidated from every ADR in the project docs (SPEC, Roadmap, Sprint 1 to 7 gu
 | ADR-100 | Quarantine a HubSpot row after 3 failures | Accepted |
 | ADR-101 | The Claude HubSpot connector is the operator layer | Accepted |
 | ADR-102 | Send a GDPR legal basis on every HubSpot contact | Accepted |
+| ADR-103 | A rejected draft blocks its whole account by default | Accepted |
+| ADR-104 | Derive new facts at draft time and store them on outreach_queue | Accepted |
+| ADR-105 | GTM Run chains the sync, engine and Contact Finder | Accepted |
+| ADR-106 | Product overlap is a fixed-rule gate with a visible row | Accepted |
+| ADR-107 | Code picks the angle, the LLM only writes | Accepted |
+| ADR-108 | Template and invalid drafts go to needs_redraft | Accepted |
+| ADR-109 | Region is a sort preference, not part of final_score | Accepted |
+| ADR-110 | Defer employee_count_date, country source and LinkedIn verification | Accepted |
+| ADR-111 | Small teams without a valid trigger get no draft | Accepted |
+| ADR-112 | Clay email enrichment stays a manual step between two GTM Runs | Accepted |
+| ADR-113 | Lead tracks instead of a second project | Accepted |
+| ADR-114 | Gig posts live in Neon, not Sheets | Accepted |
+| ADR-115 | GTM Gig Finder is a separate workflow | Accepted |
+| ADR-116 | Deterministic intent gate before any LLM call | Accepted |
+| ADR-117 | A directory listing is the agency trigger; no product-overlap gate on the agency track | Accepted |
+| ADR-118 | No Clay research credits on the agency track | Accepted |
+| ADR-119 | Every new source passes a go/no-go check on robots.txt and terms | Accepted |
 
 ---
 
@@ -774,6 +791,55 @@ Consolidated from every ADR in the project docs (SPEC, Roadmap, Sprint 1 to 7 gu
 **Decision:** Keep `Clay Email Queue`, the Clay waterfall and `Clay Email Import` outside `GTM Run`. One cycle is GTM Run (finds contacts) -> Clay email chain -> GTM Run (drafts). A contact without a verified email waits `outreach.await_email_days` (default 3) before it can become a LinkedIn draft, so fresh contacts wait for their email.
 **Trade-offs / consequences:** Two GTM Runs and about 10 minutes of Clay clicks per batch. Drafts arrive one run later, with verified emails (9 of 9 on 2026-11-13).
 **Source:** Sprints/Sprint 14 Patch - Engine Fixes.md (ADR-112)
+
+## ADR-113: Lead tracks instead of a second project
+**Status:** Accepted
+**Context:** Sprint 15 adds work an entry-level builder can win: gig posts and boutique GTM agencies, next to the SMB track. Alternative considered: a second project with its own workflows, tables and console.
+**Decision:** One `lead_track` column (`smb_direct`, `agency_partner`, `gig_post`) on `accounts` (default `smb_direct`, normalized by `gtm_track()` in `gtm_sync_pull()`) and on `outreach_queue` (default `smb_direct`, checked). Code nodes switch on it; the console filters on it; HubSpot gets it as `gtm_lead_track` (single-line text, not a dropdown, per SETUP 11.2).
+**Trade-offs / consequences:** Dedupe, gates, the LLM chain, the console and HubSpot are reused. Cost: track checks in Process Accounts, Score Enriched, Rescore Accounts, Select Clay Batch, Select Contact Batch, Select Outreach Pairs and Draft Outreach. SMB output is unchanged (regression-tested against the S14 bodies).
+**Source:** Sprints/Sprint 15 - Freelance and Agency Leads Plan.md (ADR-113); db/s15_lead_tracks.sql
+
+## ADR-114: Gig posts live in Neon, not Sheets
+**Status:** Accepted
+**Context:** A gig post is not a domain-keyed account, it goes stale within days, and ADR-090 already points data to Neon. Alternative considered: rows in the `accounts` tab.
+**Decision:** Table `gig_posts` keyed by `post_key` (`n8n:<topic_id>`, `make:<topic_id>`, `hn:<comment_id>`, `manual:<hash>`), written only through `gtm_gig_upsert()` (never downgrades `drafted`, `sent`, `replied`, `won`, `lost`, `expired`), `gtm_gig_expire()`, `gtm_gig_add()` and `gtm_gig_status()`. One `gig_ops` row per run. Gig drafts use the synthetic ids `gig:<post_key>` for `account_id` and `contact_id`; inserting one moves its post to `drafted`, Mark sent moves it to `sent`, Re-draft moves it back to `new`.
+**Trade-offs / consequences:** No Sheet round trip and no Neon Sync lag for gigs. Gig drafts have no accounts row, so account views and HubSpot ignore them by construction, and `v_hubspot_scope` excludes them explicitly.
+**Source:** Sprints/Sprint 15 - Freelance and Agency Leads Plan.md (ADR-114); db/s15_lead_tracks.sql
+
+## ADR-115: GTM Gig Finder is a separate workflow
+**Status:** Accepted
+**Context:** Gigs need an hourly cadence, no Sheets and no Clay. Alternative considered: more nodes in the 70-node engine.
+**Decision:** New workflow `GTM Gig Finder` (rQ8R3zlIpw6U1bcD, folder 1 Core), called first by `GTM Run` (continue on error) and on its own every 3 hours once published. `Draft Gig Reply` carries a verbatim copy of the Draft Outreach LLM router (settings to callStep), built by `scripts/s15/gig/build.mjs`, plus the gig prompt and the gig validator.
+**Trade-offs / consequences:** Zero risk to the tested engine spine. The router exists twice: rebuild `Draft Gig Reply` with build.mjs whenever the Draft Outreach router changes, until an LLM Router sub-workflow replaces both.
+**Source:** Sprints/Sprint 15 - Freelance and Agency Leads Plan.md (ADR-115); scripts/s15/gig/
+
+## ADR-116: Deterministic intent gate before any LLM call
+**Status:** Accepted
+**Context:** Most posts in community job boards are people offering services, not hiring.
+**Decision:** `Gig Gates` runs fixed rules in this order before scoring: seen, intent (`[FOR HIRE]`, "available for hire", "seeking work" and similar are dropped; a `[hiring]` tag wins), freshness (`gig.max_age_hours`), crowding (`gig.max_replies`), veto words, stack match, hourly rate floor. Every drop is counted in `gig_ops`. Gated posts are still upserted (`gated_out`, with `gate_reason`) for dedupe and telemetry, and are gated again on the next run, so a config change can reopen them.
+**Trade-offs / consequences:** No LLM credits on offers of service. A post with no clear intent is kept as `unclear` and scores lower (intent 40 instead of 100).
+**Source:** Sprints/Sprint 15 - Freelance and Agency Leads Plan.md (ADR-116); scripts/s15/gig/Gig Gates.js
+
+## ADR-117: A directory listing is the agency trigger; no product-overlap gate on the agency track
+**Status:** Accepted
+**Context:** Agencies are small, so the S14 small-team gate (ADR-111) would skip all of them, and they sell GTM services, so the product-overlap gate (ADR-106) would reject all of them.
+**Decision:** For `agency_partner`, the listing in the Clay or n8n experts directory is a valid dated trigger (`clay_trigger_source = directory`, date = fetch date), the small-team gate is skipped (`skip_small_team_gate`) and the product-overlap gate is skipped (`skip_product_overlap_gate`). Angles: `white_label_overflow`, `stack_specific_help` (their listed services include n8n, Clay or HubSpot) and `hire_bridge` (careers page found). The no-partnership rule still holds; the angle text says "take scoped tasks under your brand". Validator v3 adds: name one of their services outside my own proof sentence, offer one small first task, no seniority claims. The portfolio link is appended by code after validation (D3).
+**Trade-offs / consequences:** A directory listing is a weaker "why now" than a hire or a round; the pitch leans on capacity and white-label overflow instead.
+**Source:** Sprints/Sprint 15 - Freelance and Agency Leads Plan.md (ADR-117); scripts/s15/engine/patch_engine.mjs
+
+## ADR-118: No Clay research credits on the agency track
+**Status:** Accepted
+**Context:** The directory profile already gives services, tier, languages, location and pricing band.
+**Decision:** `Select Clay Batch` skips `agency_partner` rows while `lead_tracks.agency_partner.clay_research = false`. Clay is used only for the email waterfall on top agency contacts (ADR-112 cycle, unchanged).
+**Trade-offs / consequences:** Zero Clay research credits for agencies; agency drafts rely on the profile and the homepage instead of a Claygent summary.
+**Source:** Sprints/Sprint 15 - Freelance and Agency Leads Plan.md (ADR-118)
+
+## ADR-119: Every new source passes a go/no-go check on robots.txt and terms
+**Status:** Accepted (amended by the Phase 0 spike, 2026-11-15)
+**Context:** The plan applied this check to directories only. The spike (scripts/s15/SPIKE.md) found that robots.txt allows both Discourse forums, but their terms forbid automated access ("You may not automate access to the forum, or monitor the forum, such as with a web crawler"). The Make site answers non-browser clients with a Cloudflare challenge. HN allows API access but had 0 hiring posts in four monthly freelancer threads.
+**Decision:** Clay experts and n8n experts: go (robots.txt allows the listing and profile paths, no website terms against it), low volume, 1.5 s politeness, each profile fetched once (`seen_directory_profiles` Data Table). Forums: no automated fetch. Posts arrive as the forum's own notification emails (Jobs category set to Watching First Post, labelled `gtm-gigs` by a Gmail filter, read by the `Read Forum Mail` node), or are pasted on the console Gigs page. Make: no-go, manual Cowork sweep if D2 is ever turned on. HN freelancer: coded, off by config.
+**Trade-offs / consequences:** The gig lane depends on a Gmail OAuth2 credential (not created by the build) and on the forum's email settings. Reply counts are unknown for mailed posts, so crowding is judged by age only.
+**Source:** Sprints/Sprint 15 - Freelance and Agency Leads Plan.md (ADR-119); scripts/s15/SPIKE.md
 
 ---
 

@@ -2,14 +2,17 @@
 //  1. SMB regression: every patched node gives the same SMB output as the S14 body (new track keys aside),
 //     on the S14 Draft Outreach pairs and on the scripts/s14/fixtures Select Outreach Pairs data (local, not committed).
 //  2. Agency behaviour of each node, including Partner Directories Source on the Phase 0 fixtures.
-// Usage: node scripts/s15/engine/test_engine_nodes.mjs <dir with the S14 live .js copies>   (exit 0 = all passed)
+// Usage: node scripts/s15/engine/test_engine_nodes.mjs [dir with the S14 live .js copies]   (exit 0 = all passed)
+// Default dir: scripts/s14. Bodies that S14 did not change (Process Accounts, Select Clay Batch, Normalize Seeds) come
+// from scripts/s15/engine/s14_baseline/, taken from the pre-S15 export (commit 7c874a1).
 import fs from 'node:fs';
 import path from 'node:path';
 import { S15 } from '../phase2_config.mjs';
 
 const OLD = path.resolve(process.argv[2] || 'scripts/s14');
 const NEW = path.resolve('scripts/s15/engine');
-const src = (dir, n) => fs.readFileSync(path.join(dir, n + '.js'), 'utf8');
+const BASE = path.resolve('scripts/s15/engine/s14_baseline');
+const src = (dir, n) => { const p = path.join(dir, n + '.js'); return fs.readFileSync(dir === OLD && !fs.existsSync(p) ? path.join(BASE, n + '.js') : p, 'utf8'); };
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 let failed = 0;
 const check = (name, ok, got) => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${ok ? '' : '  got: ' + JSON.stringify(got).slice(0, 700)}`); if (!ok) failed++; };

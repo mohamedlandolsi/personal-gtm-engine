@@ -22,7 +22,7 @@ Self-hosted n8n in Docker. Add the variables from `.env.example` to the containe
 
 ## 3. Neon
 
-1. Create the project. In **SQL Editor** (database `neondb`, branch `production`) run all of `db/schema.sql`. It is safe to re-run.
+1. Create the project. In **SQL Editor** (database `neondb`, branch `production`) run all of `db/schema.sql`. It is safe to re-run. It includes the Sprint 15 block (lead tracks, gig tables, gig functions, HubSpot lead track). On a database that already has the Sprint 14 schema, run `db/s15_lead_tracks.sql` and then `db/s15_hubspot.sql` instead; both are safe to re-run.
 2. Make Neon the system of record for drafts:
 
    ```sql
@@ -41,16 +41,17 @@ Self-hosted n8n in Docker. Add the variables from `.env.example` to the containe
 
 ## 5. n8n Data Tables
 
-Create two Data Tables with these string columns:
+Create three Data Tables with these string columns:
 
 | Table | Columns |
 |---|---|
 | `seen_accounts` | `domain`, `company_name`, `first_seen_at`, `last_seen_at`, `source` |
 | `seen_contacts` | `contact_key`, `account_domain`, `full_name`, `email`, `linkedin_url`, `first_seen_at`, `last_seen_at`, `source` |
+| `seen_directory_profiles` | `profile_key`, `directory`, `slug`, `company_name`, `domain`, `first_seen_at` (Sprint 15: one row per directory profile already fetched) |
 
 ## 6. Import the workflows
 
-For each of the 8 core files in `workflows/` (not `retired/`, and not the 2 HubSpot files, which section 11 covers): **Workflows > Add workflow > ... > Import from File**. Then in every imported workflow:
+For each of the 9 core files in `workflows/` (not `retired/`, and not the 2 HubSpot files, which section 11 covers): **Workflows > Add workflow > ... > Import from File**. Then in every imported workflow:
 
 | Node type | Fix |
 |---|---|
@@ -59,13 +60,15 @@ For each of the 8 core files in `workflows/` (not `retired/`, and not the 2 HubS
 | Data Table | Pick the matching table (`YOUR_..._TABLE_ID` placeholders) |
 | Tavily Search (Contact Finder) | Select your Header Auth credential |
 | Clay Balance (Clay Meter) | Select the "Clay API Key" credential |
-| Discord (Error Alerts) | Select your Discord webhook credential |
+| Discord (Error Alerts, Hot Gig Ping in the Gig Finder) | Select your Discord webhook credential |
+| Gmail "Read Forum Mail" (Gig Finder) | Select a Gmail OAuth2 credential (section 8, Sprint 15), then enable the node. It is disabled in the export |
+| Execute Workflow (GTM Run) | Re-select the called workflow in each step (`Gig Finder`, `Sync Before`, `Engine Pass 1`, `Contact Finder`, `Engine Pass 2`, `Sync After`): the export points at the original workflow ids |
 | HTTP "Fetch Website" (Engine) | Replace `you@example.com` in the User-Agent header with your contact email |
 
 Then:
 
-1. In **Personal GTM Engine** and **GTM Neon Sync**: **Settings > Error workflow** = `GTM Engine: Error Alerts`.
-2. Publish **GTM Neon Sync** (every 15 minutes) and **GTM Engine: Error Alerts**. Every other workflow runs by hand.
+1. In **Personal GTM Engine**, **GTM Neon Sync** and **GTM Gig Finder**: **Settings > Error workflow** = `GTM Engine: Error Alerts`.
+2. Publish **GTM Neon Sync** (every 15 minutes) and **GTM Engine: Error Alerts**. Publish **GTM Gig Finder** too if you want it every 3 hours (D7); otherwise it runs only as the first step of `GTM Run`. Every other workflow runs by hand.
 3. Optional: folders `1 Core`, `2 Clay`, `3 Ops` as in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## 7. Console
@@ -118,6 +121,38 @@ Add these in the console (**Config**, save with a new rev). Every key has the sa
 
 Clay, when you use it: run `Clay Meter` before and after, run Clay tables by selection only, and keep auto-run off on both tables (Free plan: 100 Data Credits and 500 Actions a month).
 
+### Sprint 15: lead tracks and the gig lane
+
+`GTM Run` now starts with `GTM Gig Finder` (continue on error, so a gig failure never blocks the SMB and agency run).
+
+**Config keys.** `node scripts/s15/phase2_config.mjs example` adds them to `config/config.example.json`; on Neon they were added as one console config version. Each key has the same default in code. The ones you may want to change:
+
+| Key | Default | What it does |
+|---|---|---|
+| `lead_tracks.agency_partner.enabled` | true | Turns the agency track on or off |
+| `lead_tracks.agency_partner.allowed_utc_offsets` | -5 to 4 | Agency locations that fit your working hours (D1) |
+| `lead_tracks.agency_partner.exclude_tiers`, `exclude_pricing` | Clay Elite Studio, n8n Enterprise; `10k-a-month` | Directory tiers and pricing bands too large to need a junior builder |
+| `lead_tracks.agency_partner.proof_points`, `cta` | Your two proof sentences, one small-task question | Used in agency drafts only |
+| `sources.partner_directories.max_profiles_per_run` | 10 (pilot) | New directory profiles fetched per run. Raise to 40 after a clean first run |
+| `sources.partner_directories.clay.enabled`, `n8n.enabled` | true | One switch per directory; Make stays off (D2) |
+| `gig.max_drafts_per_run` | 2 (pilot) | Gig replies drafted per run. Raise to 6 after a clean first run |
+| `gig.min_score`, `gig.discord_ping_min_score` | 60, 75 | Draft threshold and Discord ping threshold (D4) |
+| `gig.max_age_hours`, `gig.max_replies` | 72, 25 | Freshness and crowding gates |
+| `gig.min_hourly_usd` | null | Hourly rate floor; null keeps every rate (D5) |
+| `gig.veto_keywords`, `gig.stack_keywords`, `gig.my_stack` | See config | Words that drop a post, words that make it a match, the stack the reply may claim (D6) |
+| `gig.sources.forum_mail.gmail_query` | `label:gtm-gigs newer_than:4d` | Which emails `Read Forum Mail` reads |
+| `gig.sources.hn_freelancer.enabled` | false | HN freelancer threads: coded, but 0 hiring posts in 4 months |
+
+**Forum mail (the gig source).** The forums forbid automated access, so the Gig Finder reads the forum's own emails instead:
+
+1. On `community.n8n.io`, sign in, open the **Jobs** category, bell icon > **Watching First Post**. In your forum **Preferences > Emails**, set email notifications to **Always** (otherwise the forum emails only while you are away).
+2. In Gmail, create a filter: **From** = the sender of the forum's notification emails (open one to see it), action **Apply the label** `gtm-gigs` (and Skip the Inbox if you like).
+3. In n8n, **Credentials > Add credential > Gmail OAuth2 API**. Self-hosted n8n needs your own OAuth client: in Google Cloud enable the Gmail API, create an OAuth client ID (Web application) with the redirect URL the n8n dialog shows, paste the client ID and secret, then sign in with that Gmail account.
+4. **GTM Gig Finder > Read Forum Mail**: select the credential, then enable the node (it ships disabled, so the workflow runs without it).
+5. Posts you find elsewhere: paste them on the console **Gigs** page (**Add a post by hand**). The next Gig Finder run gates, scores and drafts them.
+
+**Check a run.** Console **Runs > Gigs** shows one row per Gig Finder run: posts fetched, each gate count, scored, drafted, pinged and expired. Gig drafts sit in the Queue under the Gig track; agency drafts under the Agency track.
+
 ## 9. Troubleshooting
 
 | Symptom | Where to look | Usual cause |
@@ -129,6 +164,9 @@ Clay, when you use it: run `Clay Meter` before and after, run Clay tables by sel
 | Console vetoes or config not in the Sheet | Console **Runs > Sync**, `v_sync_health.pending_push` | `GTM Neon Sync` not published, or n8n not running |
 | Console config save fails with `digest: ...` | Config JSON | The `digest` key was removed; set it to `{"enabled": false}` |
 | `Referenced node doesn't exist` | Error message | A node was renamed. Code nodes read other nodes by exact name. |
+| No gig posts | Console **Runs > Gigs**, `Read Forum Mail` output | `Read Forum Mail` still disabled or without a credential, the Gmail filter does not apply `gtm-gigs`, or the forum category is not on Watching First Post |
+| Gig posts all Set aside | Console **Gigs > Set aside**, gate reason on each post | Offers of service (`intent_for_hire`), posts older than `gig.max_age_hours`, or no stack match |
+| No agency accounts | `Partner Directories Source` stats item, `ops.rejection_summary` | Every listed profile already in `seen_directory_profiles`, `max_profiles_per_run` too low, or the tier and pricing filters drop them all |
 
 ## 10. Exporting your own changes
 
@@ -161,6 +199,8 @@ Settings > **Data Management > Properties** > **Create property**. Use a single-
 | Company | GTM Score | `gtm_score` | Number |
 | Company | GTM Trigger | `gtm_trigger` | Multi-line text |
 | Contact | GTM Email Status | `gtm_email_status` | Single-line text |
+| Company | GTM Lead Track | `gtm_lead_track` | Single-line text (Sprint 15: `smb_direct` or `agency_partner`) |
+| Deal | GTM Lead Track | `gtm_lead_track` | Single-line text (Sprint 15) |
 
 LinkedIn uses the built-in contact property `hs_linkedin_url`; do not create one. Tick "Require unique values" when you create `gtm_account_key`: HubSpot allows it only at creation, and a name that once existed without it can never become unique, even after a permanent delete.
 

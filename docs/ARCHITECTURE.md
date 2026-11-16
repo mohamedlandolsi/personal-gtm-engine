@@ -1,15 +1,23 @@
 # Architecture
 
-Ten n8n workflows, one Google Sheet, one Neon Postgres database, a Next.js review console and a HubSpot Free CRM. The engine and its helpers read and write the Sheet. Drafts and config live in Neon, which the console reads and writes. `GTM Neon Sync` bridges the two every 15 minutes. After you approve a draft, `GTM HubSpot Sync` puts the account in HubSpot and copies deal stages back. Every hand-off between workflows is a tab or a table you can inspect and correct.
+Twelve n8n workflows, one Google Sheet, one Neon Postgres database, a Next.js review console and a HubSpot Free CRM. The engine and its helpers read and write the Sheet. Drafts and config live in Neon, which the console reads and writes. `GTM Neon Sync` bridges the two every 15 minutes. After you approve a draft, `GTM HubSpot Sync` puts the account in HubSpot and copies deal stages back. Every hand-off between workflows is a tab or a table you can inspect and correct.
+
+Since Sprint 15 the system works three lead tracks: `smb_direct` (the original SMB track), `agency_partner` (boutique GTM agencies from the Clay and n8n experts directories, run through the same engine) and `gig_post` (public posts where someone hires for n8n, Clay or HubSpot work, handled by `GTM Gig Finder` straight in Neon). See [Lead tracks](#lead-tracks-sprint-15).
 
 ```
                  Inputs                       n8n (Docker on your laptop)                     Stores
-  seed_accounts, YC, HN  ---> Personal GTM Engine (manual) ---------------------> Sheets: accounts, contacts, queues, ops
+  seeds, YC, HN, experts ---> Personal GTM Engine (manual) ---------------------> Sheets: accounts, contacts, queues, ops
                                    |   ^                                                   |
                                    |   +--- GTM Contact Finder (manual, Tavily gate) <-----+ contacts_queue / contact_results
                                    |
                                    +--> drafts: gtm_insert_draft() ---------------> Neon: outreach_queue (system of record)
                                    +--> config: n8n_config_sheet <----------------- Neon: config_versions (console owns)
+  experts = Clay and n8n experts directories (agency_partner track, Sprint 15)
+
+  Forum mail (Gmail label gtm-gigs) --+
+  Console Gigs page: Add gig ---------+--> GTM Gig Finder (first step of GTM Run; every 3 h once published)
+                                            gates, score, Draft Gig Reply --> Neon: gig_posts, gig_ops,
+                                                                              outreach_queue (lead_track gig_post)
 
   Sheets <-- GTM Neon Sync (every 15 min): pushes console vetoes, re-drafts and config, mirrors accounts, contacts, ops, config into Neon
   Neon   <-- GTM Console (Next.js on Vercel, password gate): review, approve, edit, veto, config
@@ -27,10 +35,11 @@ Ten n8n workflows, one Google Sheet, one Neon Postgres database, a Next.js revie
 
 | Workflow | Nodes | Trigger | Job |
 |---|---|---|---|
-| Personal GTM Engine | 59 | Manual | Discovery, gates, scoring, website enrichment, contact merge, drafting into Neon |
+| Personal GTM Engine | 74 | Manual | Discovery, gates, scoring, website enrichment, contact merge, drafting into Neon. Since Sprint 15 it also reads the Clay and n8n experts directories (`Partner Directories Source`) and switches on `lead_track` in the scoring, Clay, contact and drafting nodes |
 | GTM Contact Finder | 13 | Manual | Founder lookup: YC page first, Tavily as a gated fallback |
-| GTM Run | 8 | Manual | Sprint 14 run chain: GTM Neon Sync, Engine, Contact Finder, Engine, GTM Neon Sync, then fails loudly if accounts are still queued for contacts (ADR-105). The three called workflows each have a "When Executed by Another Workflow" trigger |
-| GTM Neon Sync | 15 | Every 15 min (published) | Pushes console decisions to Sheets, then mirrors Sheets into Neon through `gtm_sync_pull()` |
+| GTM Run | 10 | Manual | Run chain: GTM Gig Finder (Sprint 15, continue on error), GTM Neon Sync, Engine, Contact Finder, Engine, GTM Neon Sync, then fails loudly if accounts are still queued for contacts (ADR-105). The called workflows each have a "When Executed by Another Workflow" trigger |
+| GTM Gig Finder | 26 | Called by GTM Run; every 3 h once published | Sprint 15 gig lane: reads forum notification emails (`Read Forum Mail`, disabled until you add a Gmail credential) and posts added on the console Gigs page, runs `Gig Gates`, `Score Gigs` and `Draft Gig Reply`, writes `gig_posts`, gig drafts and one `gig_ops` row, expires stale posts and pings Discord for top scores (ADR-114 to 116) |
+| GTM Neon Sync | 20 | Every 15 min (published) | Pushes console decisions to Sheets, then mirrors Sheets into Neon through `gtm_sync_pull()`. Since Sprint 15 it carries `lead_track` and `source_meta` |
 | GTM Clay Bridge | 11 | Manual | Imports the Clay accounts export into `clay_results` (new domains) and `accounts.clay_trigger*` (all domains) |
 | Clay Email Queue | 7 | Manual | Picks one primary contact per account for the Clay email waterfall |
 | Clay Email Import | 8 | Manual | Applies Clay email results to `contacts`; never downgrades a verified email |
@@ -39,13 +48,28 @@ Ten n8n workflows, one Google Sheet, one Neon Postgres database, a Next.js revie
 | GTM HubSpot Sync | 24 | Every 30 min (published) | Reads the Neon outbox in 6 steps (companies, contacts, deals, notes, tasks, stage moves), pushes each row through `HubSpot Upsert Record`, records results with `gtm_hubspot_record()`, then pulls changed deal stages back with `gtm_hubspot_pull_stages()` |
 | HubSpot Upsert Record | 11 | Called by GTM HubSpot Sync (published sub-workflow) | One record: update by HubSpot id, or search the natural key and adopt, or create with associations. Returns ok, action, id or error |
 
-In n8n they sit in folders: `1 Core` (Engine, Contact Finder, GTM Run), `2 Clay` (Bridge, Email Queue, Email Import, Meter), `3 Ops` (Neon Sync, Error Alerts), `4 CRM` (HubSpot Sync, HubSpot Upsert Record).
+In n8n they sit in folders: `1 Core` (Engine, Contact Finder, GTM Run, Gig Finder), `2 Clay` (Bridge, Email Queue, Email Import, Meter), `3 Ops` (Neon Sync, Error Alerts), `4 CRM` (HubSpot Sync, HubSpot Upsert Record).
 
-Each workflow sits on a real boundary: a human step (Contact Finder results, Clay runs, CSV exports), a paid-credit gate (Tavily, Clay), or an external tool.
+Each workflow sits on a real boundary: a human step (Contact Finder results, Clay runs, CSV exports), a paid-credit gate (Tavily, Clay), or an external tool. The Gig Finder is separate because gigs need a faster cadence and no Sheets or Clay (ADR-115).
+
+## Lead tracks (Sprint 15)
+
+One `lead_track` column on `accounts` and `outreach_queue` instead of a second project (ADR-113). Code nodes switch on it, the console filters on it (track chips on Queue and Accounts) and HubSpot receives it as `gtm_lead_track`.
+
+| | `smb_direct` | `agency_partner` | `gig_post` |
+|---|---|---|---|
+| Who | SMBs that could use GTM automation | Boutique GTM agencies with overflow client work | Someone who posted a paid n8n, Clay, HubSpot or automation task |
+| Source | Seeds, HN, YC | Clay experts and n8n experts directories (public pages, robots.txt allows, ADR-119) | Forum notification emails, posts you add on the console Gigs page; HN freelancer coded but off |
+| Store | Sheets, mirrored to Neon | Sheets, mirrored to Neon (`source_meta` holds the directory profile) | Neon only: `gig_posts`, `gig_ops` (ADR-114) |
+| Trigger | Clay or website trigger | The directory listing, dated the fetch day (ADR-117) | The post itself |
+| Gates | Sprint 14 gates (ADR-103 to 111) | Tier, pricing band, language, UTC offset and stack filters; no small-team and no product-overlap gate (ADR-117) | Intent, freshness, crowding, veto words, stack match, rate floor (ADR-116) |
+| Clay | Research and email waterfall | Email waterfall only, no research credits (ADR-118) | None |
+| Draft | 6 SMB angles, validator v2 | 3 agency angles (`white_label_overflow`, `stack_specific_help`, `hire_bridge`), validator v3 | One reply per post (60 to 130 words), gig validator |
+| HubSpot | Yes, after approval | Yes, after approval, with `gtm_lead_track` | No (`v_hubspot_scope` excludes it) |
 
 ## HubSpot layer
 
-Neon decides what goes to HubSpot and remembers what is already there; n8n only carries the requests. Only human-approved (or sent) drafts of accounts that are not vetoed are in scope. After a deal exists, HubSpot owns its stage and the sync copies it back. Schema: the Sprint 13 block of `db/schema.sql` (also kept as `db/s13_hubspot.sql`).
+Neon decides what goes to HubSpot and remembers what is already there; n8n only carries the requests. Only human-approved (or sent) drafts of accounts that are not vetoed are in scope. Gig drafts are never in scope; companies and deals carry `gtm_lead_track` since Sprint 15 (`db/s15_hubspot.sql`). After a deal exists, HubSpot owns its stage and the sync copies it back. Schema: the Sprint 13 block of `db/schema.sql` (also kept as `db/s13_hubspot.sql`).
 
 ```
                          Neon (decides and remembers)                                   HubSpot Free
@@ -76,13 +100,13 @@ A re-run writes nothing: `hubspot_links` remembers every HubSpot id, and the out
 
 ## Daily loop
 
-1. Start Docker. `GTM Neon Sync` runs every 15 minutes and `GTM HubSpot Sync` every 30 minutes on their own.
-2. Run `GTM Contact Finder` when new accounts are queued.
-3. Run `Personal GTM Engine`.
-4. Open the console (phone is fine): review, edit, approve, send by hand, **Mark sent**.
+1. Start Docker. `GTM Neon Sync` runs every 15 minutes and `GTM HubSpot Sync` every 30 minutes on their own; `GTM Gig Finder` every 3 hours once published.
+2. Open the console **Gigs** page first: gig posts go stale within days. Reply to the best drafts, then mark each post Replied, Won, Lost or Dismiss as it moves.
+3. Run `GTM Run` (Gig Finder, Neon Sync, Engine, Contact Finder, Engine, Neon Sync).
+4. Open the console (phone is fine): review, edit, approve, send by hand, **Mark sent**. The track chips split SMB, agency and gig drafts.
 5. Clay, only when needed. Emails: `Clay Email Queue` > run the waterfall in Clay by selection > export > import CSV > `Clay Email Import`. Accounts: run in Clay by selection > export > import CSV > `GTM Clay Bridge`. Run `Clay Meter` before and after.
 
-Every stage is idempotent: the Data Table ledgers (`seen_accounts`, `seen_contacts`), `contact_results`, `clay_results` and the Neon `outreach_queue` make a re-run write nothing new.
+Every stage is idempotent: the Data Table ledgers (`seen_accounts`, `seen_contacts`, `seen_directory_profiles`), `contact_results`, `clay_results`, the Neon `gig_posts` keys and the Neon `outreach_queue` make a re-run write nothing new.
 
 ## Stage details
 
@@ -94,8 +118,19 @@ Every stage is idempotent: the Data Table ledgers (`seen_accounts`, `seen_contac
 | Hacker News "Who is hiring" | Algolia API, two latest threads, strong-keyword gate | None (public API) |
 | YC company directory | Public directory by tag, active companies with a website | None (public data) |
 | Apollo company search | Code node, off by default (free plan returns nothing useful) | Credits only if enabled |
+| Clay experts and n8n experts directories (Sprint 15) | `Partner Directories Source`: listing pages, then each new profile once (`seen_directory_profiles`), data read from the page's embedded JSON. Rows get `lead_track = agency_partner` and `source_meta` | None (public pages) |
 
-Hard filters run before any enrichment or LLM call: domain required, employee range, industry include/exclude, keyword include/exclude, UTC offset, company type, seen-before. Each rejection reason is counted in `ops.rejection_summary`.
+Hard filters run before any enrichment or LLM call: domain required, employee range, industry include/exclude, keyword include/exclude, UTC offset, company type, seen-before. Each rejection reason is counted in `ops.rejection_summary`. Agency rows use the `lead_tracks.agency_partner` filters instead (excluded tiers and pricing bands, required language, UTC offsets, stack keywords); `agency_pricing` and the other agency reasons are counted the same way.
+
+### Gig lane (Sprint 15)
+
+The forums forbid automated access (Phase 0 spike, `scripts/s15/SPIKE.md`), so `GTM Gig Finder` never fetches them. Posts arrive two ways: the forum's own notification emails (Jobs category on Watching First Post, labelled `gtm-gigs` by a Gmail filter, read by `Read Forum Mail`), and posts you paste on the console Gigs page (`gtm_gig_add()`).
+
+1. **Gates** (`Gig Gates`, before any LLM call, ADR-116): seen, intent (offers of service such as `[FOR HIRE]` are dropped), freshness (`gig.max_age_hours`, 72), crowding (`gig.max_replies`, 25; unknown for mailed posts), veto words, stack match, hourly rate floor (`gig.min_hourly_usd`, off). Gated posts are stored as `gated_out` with `gate_reason` and gated again next run.
+2. **Score** (`Score Gigs`): `0.35 stack fit + 0.20 intent + 0.15 freshness + 0.15 competition + 0.10 budget signal + 0.05 remote fit`, plus 10 for agency or ongoing-work words, capped at 100. The breakdown is kept in `score_breakdown`.
+3. **Draft** (`Draft Gig Reply`): posts at `gig.min_score` (60) or above, highest score first, at most `gig.max_drafts_per_run`. Same LLM router as Draft Outreach, gig prompt, gig validator; the signature with two portfolio links is added by code after validation. A valid draft is `pending`, otherwise `needs_redraft`. Inserting a draft moves the post to `drafted`.
+4. **Ping and expire**: drafts scoring `gig.discord_ping_min_score` (75) or more ping Discord with the console link. `gtm_gig_expire()` marks posts older than twice the max age `expired` and supersedes their open drafts.
+5. **Telemetry**: one `gig_ops` row per run (fetched, each gate count, scored, drafted, pinged, expired), shown on the console Runs page, Gigs tab.
 
 ### Enrichment
 
@@ -136,6 +171,8 @@ flowchart TB
     E -->|all failed| TPL[Deterministic template] --> RD
 ```
 
+On the agency track (ADR-117) code picks one of 3 angles (`white_label_overflow`, `stack_specific_help`, `hire_bridge`), the small-team and product-overlap gates are skipped, and validator v3 adds three rules: name one of their services outside my own proof sentence, offer one small first task, no seniority claims.
+
 Validator rules (deterministic): word counts per field, LinkedIn note length, follow-up lengths, company named in the first line, no links or placeholders, no money or percentages, no invented numbers, tool whitelist (only tools detected on the company's site), no first-person claims about the recipient, no partnership pitch, hedged statements only, no "which means" conclusions, no "ops team" at companies of 20 or fewer, and no product terms outside the observation. Every rejection reason lands in `risk_notes` so a reviewer sees why a draft needed a retry.
 
 ### Human in the loop
@@ -151,9 +188,11 @@ The console writes only through three Postgres functions: `gtm_review` (approve,
 | Groq | 6 s between drafts, 429 waits up to 20 s using `retry-after`, longer waits put that model on cooldown and the next model takes over |
 | Gemini | Second provider in the chain, same handling |
 | Tavily | 1 request per 1.2 s, YC lookup first so most accounts cost 0 credits |
+| Partner directories | 1.5 s between requests (`sources.partner_directories.politeness_ms`), each profile fetched once, at most `max_profiles_per_run` new profiles per run |
+| Forums | No requests: posts arrive as the forum's own emails, read from your Gmail |
 | Clay | Run by selection only, auto-run off, metered before and after by `Clay Meter` |
 | Google Sheets | Every read node uses Execute Once; writes are batched. The sync reads 4 tabs per run |
 | HubSpot | `max_per_run` caps every outbox step; the sub-workflow retries 3 times, 2 s apart. Free limits: 100 requests per 10 s, 250,000 per day |
-| Discord | Workflow failures only |
+| Discord | Workflow failures, plus one ping per hot gig draft |
 
 See [ADR.md](ADR.md) for the reasoning behind each decision and [SHEET_SCHEMA.md](SHEET_SCHEMA.md) for every tab.

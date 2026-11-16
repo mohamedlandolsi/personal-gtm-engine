@@ -17,7 +17,11 @@ let failed = 0;
 const check = (name, ok, got) => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${ok ? '' : '  got: ' + JSON.stringify(got)}`); if (!ok) failed++; };
 const err = async (sql, p) => { try { await q(sql, p); return ''; } catch (e) { return String(e.message || e); } };
 
-await db.exec(fs.readFileSync('db/schema.sql', 'utf8'));
+// S15: schema.sql now ends with the Sprint 15 block, whose views have more columns than the S14 migration
+// recreates. This test checks the S14 migration on the S14 schema, so it stops before that block.
+const fullSchema = fs.readFileSync('db/schema.sql', 'utf8');
+const s15At = fullSchema.indexOf('-- Sprint 15: lead tracks, gig lane');
+await db.exec(s15At < 0 ? fullSchema : fullSchema.slice(0, fullSchema.lastIndexOf('-- ====', s15At)));
 await db.exec(`
 insert into accounts (account_id, company_name, domain, status, clay_trigger_date) values
  ('a_veto', 'Vetoed', 'v.io', 'rejected', null),

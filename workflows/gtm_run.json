@@ -1,0 +1,300 @@
+{
+  "updatedAt": "2026-11-16T09:02:07.914Z",
+  "createdAt": "2026-11-12T08:51:56.576Z",
+  "name": "GTM Run",
+  "description": "Sprint 14: one manual run chains Neon Sync, Engine, Contact Finder, Engine, Neon Sync, then fails loudly if accounts are still queued for contacts.",
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "a9ac73e1-a9ad-495c-bfa7-732dcfff1599",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "oVuFHj1w20pt9uie",
+          "cachedResultName": "GTM Neon Sync"
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "bdf00d80-acd0-4934-8d3c-c9e834fe0eb9",
+      "name": "Sync Before",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        300,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "AlDFQcPA9KyItHZq",
+          "cachedResultName": "Personal GTM Engine"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "f16af8d8-3bcf-423e-8c1f-08b3f43f194d",
+      "name": "Engine Pass 1",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        300,
+        150
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "XZNsJ8Wnhc1CNxPc",
+          "cachedResultName": "GTM Contact Finder"
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "c79af61e-581c-41c5-9924-79880e1920fe",
+      "name": "Contact Finder",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        300,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "AlDFQcPA9KyItHZq",
+          "cachedResultName": "Personal GTM Engine"
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "8d2541ee-de08-4c74-9a66-53900e87a378",
+      "name": "Engine Pass 2",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        300,
+        450
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "oVuFHj1w20pt9uie",
+          "cachedResultName": "GTM Neon Sync"
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "id": "e0827978-7f3f-4d3c-9931-b96760eb6a72",
+      "name": "Sync After",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        300,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select (select count(*)::int from accounts where contact_status = 'queued' and coalesce(status,'') <> 'rejected') as queued_left,\n       (select json_agg(o) from (select run_at, accounts_written, contacts_written, outreach_drafts_written,\n          llm_calls, llm_failures, rejection_summary from ops order by run_at desc limit 2) o) as last_runs;",
+        "options": {}
+      },
+      "id": "a0c356ee-96e9-42da-a33b-007765654cd6",
+      "name": "Read Run Result",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        300,
+        750
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "postgres": {
+          "name": "Neon GTM"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Sprint 14 patch: a queue left over is normal. Contact Finder takes contact.max_accounts_per_run (10) per run,\n// and Select Contact Batch tops the queue up to that cap. Fail only when the queue is not moving:\n// accounts are waiting and neither engine pass of this run wrote a contact.\n// Note: GTM Engine: Error Alerts fires for production runs only; a manual run shows the red node instead.\nconst row = $input.first().json;\nconst n = Number(row.queued_left || 0);\nlet runs = row.last_runs;\nif (typeof runs === 'string') { try { runs = JSON.parse(runs); } catch (e) { runs = []; } }\nruns = Array.isArray(runs) ? runs : [];\nconst written = runs.reduce((s, r) => s + Number((r && r.contacts_written) || 0), 0);\nif (n > 0 && written === 0) throw new Error('GTM Run: ' + n + ' accounts queued but no contacts written this run. Check GTM Contact Finder.');\nreturn [{ json: Object.assign({\n  status: n > 0 ? 'ok_queue_draining' : 'ok',\n  queued_left: n,\n  contacts_written_this_run: written,\n  next_step: written > 0 ? 'Run Clay Email Queue, the Clay waterfall and Clay Email Import, then GTM Run again to draft.' : 'Nothing new to enrich.'\n}, row) }];\n"
+      },
+      "id": "ec674cf6-049d-4f4f-adad-ffff455c2130",
+      "name": "Fail If Queue Left",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        750
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## GTM Run\nOne click runs the batch in order: Gig Finder, Neon Sync, Engine, Contact Finder, Engine, Neon Sync.\n\n**How:** every step hangs off Manual Trigger and runs top to bottom (execution order v1), each waiting for its sub-workflow. Keep the steps stacked in this order; moving one changes the order.\n**Gig Finder (Sprint 15)** runs first because gig posts go stale fastest. It continues on error, so the gig lane never blocks the engine chain.\n**Cycle (ADR-112):** GTM Run finds contacts, then Clay Email Queue, Clay waterfall and Clay Email Import, then GTM Run again drafts.\n**Fails on purpose** only when accounts are queued and no contact was written (Contact Finder stuck). A queue left over is normal: 10 accounts per run.\n**On failure:** GTM Engine: Error Alerts (production runs only).",
+        "height": 400,
+        "width": 520
+      },
+      "id": "23ade2f6-944c-4fd7-a613-433141fad116",
+      "name": "Sticky Note 314bdc8a",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -620,
+        0
+      ]
+    },
+    {
+      "id": "8bcecb70-8840-48bd-9e60-334695f79b26",
+      "name": "Gig Finder",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        300,
+        -150
+      ],
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "rQ8R3zlIpw6U1bcD",
+          "cachedResultName": "GTM Gig Finder"
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "onError": "continueRegularOutput"
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Sync Before",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Engine Pass 1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Contact Finder",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Engine Pass 2",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Sync After",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Read Run Result",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Gig Finder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Run Result": {
+      "main": [
+        [
+          {
+            "node": "Fail If Queue Left",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": true,
+    "binaryMode": "separate"
+  },
+  "staticData": null,
+  "meta": {
+    "aiBuilderAssisted": true,
+    "builderVariant": "mcp"
+  },
+  "nodeGroups": [],
+  "pinData": {},
+  "activeVersionId": null,
+  "versionCounter": 6,
+  "triggerCount": 0,
+  "sourceWorkflowId": null,
+  "tags": [],
+  "shared": [
+    {
+      "updatedAt": "2026-11-12T08:51:56.586Z",
+      "createdAt": "2026-11-12T08:51:56.586Z",
+      "role": "workflow:owner",
+      "workflowId": "VMZbk71OhCT74WbR",
+      "projectId": "L1pxi50FthDHo7qn",
+      "project": {
+        "updatedAt": "2026-09-05T11:31:37.335Z",
+        "createdAt": "2026-09-05T11:28:49.261Z",
+        "id": "L1pxi50FthDHo7qn",
+        "name": "Mohamed Landolsi <you@example.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "customTelemetryTags": [],
+        "creatorId": "1342497f-ad6f-4029-bc21-3053bbd4c1ed"
+      }
+    }
+  ],
+  "versionMetadata": {
+    "name": "S15 phase 7: Gig Finder first in the run chain",
+    "description": "New step Gig Finder (GTM Gig Finder rQ8R3zlIpw6U1bcD) placed above Sync Before so it runs first; continue on error so the gig lane never blocks the engine chain. Sticky note updated."
+  }
+}

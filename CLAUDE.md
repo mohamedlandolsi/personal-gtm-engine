@@ -5,7 +5,8 @@
 - Workflow IDs (n8n folders in brackets):
   - Personal GTM Engine: AlDFQcPA9KyItHZq [1 Core]
   - GTM Contact Finder: XZNsJ8Wnhc1CNxPc [1 Core]
-  - GTM Run: VMZbk71OhCT74WbR [1 Core, manual run chain: Neon Sync, Engine, Contact Finder, Engine, Neon Sync]
+  - GTM Run: VMZbk71OhCT74WbR [1 Core, manual run chain: Gig Finder, Neon Sync, Engine, Contact Finder, Engine, Neon Sync]
+  - GTM Gig Finder: rQ8R3zlIpw6U1bcD [1 Core, Sprint 15 gig lane, called by GTM Run; every 3 h once published]
   - GTM Clay Bridge: Sz28KXKeEgtT5ZwI [2 Clay]
   - Clay Email Queue: 3A4LdccBizsXcJIW [2 Clay]
   - Clay Email Import: 7IwxEV0Pn4QC5koj [2 Clay]

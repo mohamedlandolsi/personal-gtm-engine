@@ -106,6 +106,11 @@ What changes in the plan if you pick A: Phase 3 swaps `n8n Forum Source` / `Make
 `Forum Mail Source` node, `HN Freelancer Source` is built but disabled, and the pilot fixture becomes a saved
 notification email instead of Discourse JSON. Nothing changes in the Phase 1 tables.
 
+**Decision (2026-11-15): A + B.** Forum notification emails read by the `Read Forum Mail` Gmail node (shipped
+disabled until a Gmail OAuth2 credential exists), plus the console **Add a post by hand** form (`gtm_gig_add()`).
+`HN Freelancer Source` is built and off by config (`gig.sources.hn_freelancer.enabled = false`). Make stays off (D2).
+Recorded in ADR-119; setup steps in `docs/SETUP.md`, section 8, Sprint 15.
+
 ## 5. Fixtures
 
 | File | Source | Note |
