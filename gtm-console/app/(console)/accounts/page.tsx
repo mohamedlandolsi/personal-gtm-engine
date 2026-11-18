@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Search } from "lucide-react";
 import { sql } from "@/lib/db";
 import { requireSession } from "@/lib/session";
-import { TRACKS, TRACK_LABELS, blockLabel, timeAgo, trackParam } from "@/lib/format";
+import { TRACKS, TRACK_LABELS, blockLabel, isAgent, timeAgo, trackParam } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScoreMeter } from "@/components/score-meter";
@@ -34,9 +34,20 @@ type Account = {
   run_date: Date | null;
   block_reason: string | null;
   lead_track: string | null;
+  source: string | null; // Sprint 17: "claude_digest" for Claude lead digest accounts
 };
 
 const words = (v: string | null) => (v ? v.replace(/_/g, " ") : "");
+
+// Provenance, not a state: a neutral chip, the same as in the queue.
+function AgentChip({ source }: { source: string | null }) {
+  if (!isAgent(source)) return null;
+  return (
+    <span className="inline-flex h-6 shrink-0 items-center rounded bg-secondary px-2 text-[0.8125rem] font-medium">
+      Claude
+    </span>
+  );
+}
 
 function AccountStatus({ status, block }: { status: string | null; block: string | null }) {
   // Sprint 14: an account the drafter skips (vetoed, or a rejected draft) carries the gray chip with the reason.
@@ -64,7 +75,7 @@ export default async function AccountsPage({ searchParams }: PageProps<"/account
 
   const rows = (await sql`
     select account_id, company_name, domain, final_score, priority, status, enrichment_status,
-           clay_status, contact_status, contacts_count, drafts_count, run_date, block_reason, lead_track
+           clay_status, contact_status, contacts_count, drafts_count, run_date, block_reason, lead_track, source
     from v_accounts
     where (${q} = '' or company_name ilike '%' || ${like} || '%' or domain ilike '%' || ${like} || '%')
       and (${filter} = 'all'
@@ -130,6 +141,7 @@ export default async function AccountsPage({ searchParams }: PageProps<"/account
                   <div className="flex items-center gap-3">
                     <span className="min-w-0 truncate font-semibold">{a.company_name ?? a.account_id}</span>
                     <ScoreMeter score={a.final_score} />
+                    <AgentChip source={a.source} />
                     {a.priority === "true" ? <span className="text-[0.8125rem] font-semibold">Priority</span> : null}
                   </div>
                   <div className="flex items-center gap-2 text-[0.8125rem] text-muted-foreground">
@@ -169,9 +181,12 @@ export default async function AccountsPage({ searchParams }: PageProps<"/account
                 {rows.map((a) => (
                   <tr key={a.account_id} className="hover:bg-secondary">
                     <td className="max-w-[16rem] px-4 py-3">
-                      <Link href={detail(a.account_id)} className="block font-semibold hover:underline">
-                        <span className="block truncate">{a.company_name ?? a.account_id}</span>
-                      </Link>
+                      <div className="flex items-center gap-2">
+                        <Link href={detail(a.account_id)} className="min-w-0 font-semibold hover:underline">
+                          <span className="block truncate">{a.company_name ?? a.account_id}</span>
+                        </Link>
+                        <AgentChip source={a.source} />
+                      </div>
                       <span className="block truncate text-[0.8125rem] text-muted-foreground">
                         {a.domain}
                         {a.lead_track === "agency_partner" ? `, ${TRACK_LABELS.agency_partner.toLowerCase()}` : ""}

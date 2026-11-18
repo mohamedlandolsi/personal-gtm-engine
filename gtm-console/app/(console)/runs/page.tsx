@@ -89,6 +89,18 @@ type GigRun = {
   source_stats: string | null;
 };
 
+// Sprint 17 (ADR-133): v_agent_ingest_runs, one row per Claude lead digest run.
+type AgentRun = {
+  run_id: string;
+  agent: string;
+  started_at: Date;
+  inserted: number;
+  needs_redraft: number;
+  duplicates: number;
+  rejected: number;
+  errors: number;
+};
+
 type Quarantined = { link_type: string; local_id: string; failures: number; last_error: string | null };
 
 type Event = {
@@ -227,6 +239,66 @@ function EngineTab({ rows }: { rows: EngineRun[] }) {
         ))}
       </Blocks>
     </>
+  );
+}
+
+// Sprint 17: the Claude lead digest is a second lead source, so its runs sit under the engine's.
+function AgentDigestCard({ rows }: { rows: AgentRun[] }) {
+  const errors = (r: AgentRun) => (r.errors > 0 ? <Flag tone="danger">{r.errors}</Flag> : r.errors);
+  return (
+    <section className="space-y-2" aria-labelledby="agent-digest-runs">
+      <h2 id="agent-digest-runs" className="text-[1.0625rem] leading-snug font-semibold">Claude lead digest</h2>
+      {rows.length === 0 ? (
+        <Empty
+          text="No Claude lead digest runs yet. Each run shows here once the scheduled task saves a lead."
+          href="/queue?tab=all&src=agent"
+          action="Show Claude drafts"
+        />
+      ) : (
+        <>
+          <TableShell>
+            <thead>
+              <tr className={HEAD}>
+                <Th>Run</Th><Th>When</Th><Th right>Inserted</Th><Th right>Re-draft</Th><Th right>Duplicates</Th>
+                <Th right>Rejected</Th><Th right>Errors</Th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {rows.map((r) => (
+                <tr key={`${r.agent}:${r.run_id}`} className={ROW}>
+                  <td className="px-3 py-2.5 font-mono text-[0.8125rem] wrap-anywhere">{r.run_id}</td>
+                  <td className="px-3 py-2.5"><Time at={r.started_at} /></td>
+                  <Num>{r.inserted}</Num>
+                  <Num>{r.needs_redraft}</Num>
+                  <Num>{r.duplicates}</Num>
+                  <Num>{r.rejected}</Num>
+                  <td className="tabular px-3 py-2.5 text-right">{errors(r)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </TableShell>
+          <Blocks>
+            {rows.map((r) => (
+              <li key={`${r.agent}:${r.run_id}`} className="space-y-1 px-4 py-3 text-[0.9375rem]">
+                <div className="flex items-baseline gap-2">
+                  <Time at={r.started_at} />
+                  <span className="ml-auto min-w-0 truncate font-mono text-[0.8125rem] text-muted-foreground">{r.run_id}</span>
+                </div>
+                <p className="tabular">
+                  <strong>{r.inserted}</strong> inserted, <strong>{r.needs_redraft}</strong> to re-draft,{" "}
+                  <strong>{r.duplicates}</strong> {r.duplicates === 1 ? "duplicate" : "duplicates"}, <strong>{r.rejected}</strong> rejected
+                </p>
+                {r.errors > 0 ? (
+                  <Flag tone="danger">
+                    {r.errors} {r.errors === 1 ? "error" : "errors"}
+                  </Flag>
+                ) : null}
+              </li>
+            ))}
+          </Blocks>
+        </>
+      )}
+    </section>
   );
 }
 
@@ -517,11 +589,23 @@ export default async function RunsPage({ searchParams }: PageProps<"/runs">) {
 
   let body: React.ReactNode;
   if (tab === "engine") {
-    const rows = (await sql`
-      select run_at, config_rev, accounts_written, contacts_written, outreach_drafts_written,
-             llm_calls, llm_failures, warnings, errors_sample
-      from ops order by run_at desc limit 30`) as EngineRun[];
-    body = <EngineTab rows={rows} />;
+    const [rows, agentRuns] = (await Promise.all([
+      sql`
+        select run_at, config_rev, accounts_written, contacts_written, outreach_drafts_written,
+               llm_calls, llm_failures, warnings, errors_sample
+        from ops order by run_at desc limit 30`,
+      // Sprint 17: the Claude lead digest's runs (ADR-133)
+      sql`
+        select run_id, agent, started_at, inserted::int as inserted, needs_redraft::int as needs_redraft,
+               duplicates::int as duplicates, rejected::int as rejected, errors::int as errors
+        from v_agent_ingest_runs order by started_at desc limit 10`,
+    ])) as [EngineRun[], AgentRun[]];
+    body = (
+      <>
+        <EngineTab rows={rows} />
+        <AgentDigestCard rows={agentRuns} />
+      </>
+    );
   } else if (tab === "gigs") {
     const rows = (await sql`
       select run_id, run_at, config_rev, fetched, intent_for_hire, intent_unclear, stale, crowded, vetoed, stack_miss,

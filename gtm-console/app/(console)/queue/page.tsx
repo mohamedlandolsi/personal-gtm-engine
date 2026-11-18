@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { sql } from "@/lib/db";
 import { requireSession } from "@/lib/session";
-import { TRACKS, displayState, gateName, timeAgo, trackParam } from "@/lib/format";
+import { SOURCES, TRACKS, displayState, gateName, isAgent, sourceParam, timeAgo, trackParam } from "@/lib/format";
 import { DraftDetail } from "@/components/draft-detail";
 import { QueueWorkspace, type QueueRow } from "@/components/queue-workspace";
 import { SegmentedLinks } from "@/components/segmented-links";
@@ -42,7 +42,10 @@ export default async function QueuePage({ searchParams }: PageProps<"/queue">) {
   const tab: Tab = TABS.some((t) => t.key === sp.tab) ? (sp.tab as Tab) : "review";
   // Sprint 15 (ADR-113): lead track filter, combined with the tab.
   const track = trackParam(sp.track);
-  const href = (t: string, tr: string) => `/queue?tab=${t}${tr !== "all" ? `&track=${tr}` : ""}`;
+  // Sprint 17 (ADR-133): lead source filter, engine drafts or Claude lead digest drafts.
+  const src = sourceParam(sp.src);
+  const href = (t: string, tr: string, s: string = src) =>
+    `/queue?tab=${t}${tr !== "all" ? `&track=${tr}` : ""}${s !== "all" ? `&src=${s}` : ""}`;
   // The desktop pane's draft. Phones never set it; the list picks the first row on desktop.
   const selectedId = typeof sp.id === "string" && sp.id.length > 0 && sp.id.length <= 200 ? sp.id : null;
 
@@ -55,7 +58,8 @@ export default async function QueuePage({ searchParams }: PageProps<"/queue">) {
       count(*) filter (where send_status = 'sent')::int as sent,
       count(*) filter (where approval_status <> 'superseded')::int as "all"
     from v_review_queue
-    where (${track} = 'all' or lead_track = ${track})`) as Counts[];
+    where (${track} = 'all' or lead_track = ${track})
+      and (${src} = 'all' or (${src} = 'agent') = (llm_provider is not distinct from 'claude_digest'))`) as Counts[];
 
   const rows = (await sql`
     select outreach_id, company_name, final_score, contact_name, contact_title, channel,
@@ -68,6 +72,7 @@ export default async function QueuePage({ searchParams }: PageProps<"/queue">) {
        or (${tab} = 'sent'     and send_status = 'sent')
        or (${tab} = 'all'      and approval_status <> 'superseded'))
       and (${track} = 'all' or lead_track = ${track})
+      and (${src} = 'all' or (${src} = 'agent') = (llm_provider is not distinct from 'claude_digest'))
     order by final_score desc nulls last, run_date desc nulls last
     limit 100`) as Row[];
 
@@ -76,6 +81,7 @@ export default async function QueuePage({ searchParams }: PageProps<"/queue">) {
     const auto = gateName(r.llm_provider) !== null;
     return {
     auto,
+    agent: isAgent(r.llm_provider),
     note: auto ? r.notes : null,
     outreach_id: r.outreach_id,
     company_name: r.company_name,
@@ -105,6 +111,10 @@ export default async function QueuePage({ searchParams }: PageProps<"/queue">) {
         label="Lead track"
         items={TRACKS.map((t) => ({ href: href(tab, t.key), label: t.label, active: t.key === track }))}
       />
+      <SegmentedLinks
+        label="Source"
+        items={SOURCES.map((s) => ({ href: href(tab, track, s.key), label: s.label, active: s.key === src }))}
+      />
 
       {/* With a selection, keep the workspace even when the list just emptied, so the last row can collapse out. */}
       {list.length === 0 && !selectedId ? (
@@ -124,7 +134,7 @@ export default async function QueuePage({ searchParams }: PageProps<"/queue">) {
           </Link>
         </div>
       ) : (
-        <QueueWorkspace key={tab + track} tab={tab} track={track} rows={list} selectedId={selectedId} showChips={tab !== "review"}>
+        <QueueWorkspace key={tab + track + src} tab={tab} track={track} src={src} rows={list} selectedId={selectedId} showChips={tab !== "review"}>
           {selectedId ? (
             <DraftDetail id={selectedId} mode="pane" />
           ) : (

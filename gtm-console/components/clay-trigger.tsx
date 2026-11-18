@@ -6,17 +6,20 @@ export function ClayTriggerFact({
   trigger,
   source,
   date,
+  label = "Clay trigger",
 }: {
   trigger: string | null;
   source: string | null;
   date: string | null;
+  /** Sprint 17: "Trigger" when the line came from the Claude lead digest, not Clay. */
+  label?: string;
 }) {
   const text = trigger?.trim();
   if (!text) return null;
   const meta = [source?.trim(), date?.trim()].filter(Boolean).join(", ");
   return (
     <div className="space-y-0.5">
-      <dt className="text-[0.8125rem] font-medium text-muted-foreground">Clay trigger</dt>
+      <dt className="text-[0.8125rem] font-medium text-muted-foreground">{label}</dt>
       <dd className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <span className="min-w-0 whitespace-pre-wrap wrap-anywhere">{text}</span>
         {meta ? (

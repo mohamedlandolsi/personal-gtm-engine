@@ -221,7 +221,12 @@ export default async function AccountPage({ params }: PageProps<"/accounts/[id]"
           )}
           {a.clay_trigger?.trim() ? (
             <dl className="border-t pt-3">
-              <ClayTriggerFact trigger={a.clay_trigger} source={a.clay_trigger_source} date={a.clay_trigger_date} />
+              <ClayTriggerFact
+                trigger={a.clay_trigger}
+                source={a.clay_trigger_source}
+                date={a.clay_trigger_date}
+                label={a.clay_trigger_source === "claude agent" ? "Trigger" : undefined}
+              />
             </dl>
           ) : null}
         </Panel>

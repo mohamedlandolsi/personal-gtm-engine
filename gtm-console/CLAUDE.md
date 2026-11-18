@@ -9,7 +9,7 @@ The schema lives in ../db/schema.sql. Read it before writing any query.
 
 ## Data rules (hard)
 - Never create, alter or drop tables, views or functions from app code. If a feature needs schema work, stop and give me the SQL.
-- Read from: v_review_queue, v_accounts, v_sync_health, ops, digest_ops, sync_ops, config_versions, console_events, contacts, v_crm_status, v_hubspot_runs, v_hubspot_quarantine, v_outreach_blocks, v_gig_posts, gig_ops (Sprint 15).
+- Read from: v_review_queue, v_accounts, v_sync_health, ops, digest_ops, sync_ops, config_versions, console_events, contacts, v_crm_status, v_hubspot_runs, v_hubspot_quarantine, v_outreach_blocks, v_gig_posts, gig_ops (Sprint 15), v_agent_ingest_runs (Sprint 17).
 - Write ONLY through Server Actions that call gtm_review(), gtm_reject(), gtm_veto_account(), gtm_save_config(), gtm_gig_add(), gtm_gig_status() (Sprint 15, app/(console)/gigs/actions.ts). Never INSERT, UPDATE or DELETE directly.
 - gtm_reject() is called from app/(console)/queue/reject-action.ts (Sprint 14). It is a separate file because queue/actions.ts must stay byte-identical to the Sprint 10 guide (scripts/s10_extract_console_files.mjs --check).
 - Only use the sql tagged template from lib/db.ts. Never concatenate SQL strings.

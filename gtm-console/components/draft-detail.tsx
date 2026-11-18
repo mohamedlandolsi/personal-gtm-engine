@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { CircleCheck, ExternalLink, TriangleAlert } from "lucide-react";
 import { sql } from "@/lib/db";
 import { requireSession } from "@/lib/session";
-import { PLATFORM_LABELS, REJECT_SCOPE_LABELS, TRACK_LABELS, displayState, gateName, httpUrl, idWords, timeAgo } from "@/lib/format";
+import { PLATFORM_LABELS, REJECT_SCOPE_LABELS, TRACK_LABELS, displayState, gateName, httpUrl, idWords, isAgent, timeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ChannelIcon, channelLabel } from "@/components/channel-icon";
 import { readHubspotCfg } from "@/lib/hubspot";
@@ -81,18 +81,50 @@ type DirectoryMeta = {
   profile_url?: string;
 };
 
-// source_meta is a short JSON string written by the engine; anything unreadable is ignored.
-function readMeta(text: string | null): DirectoryMeta | null {
+// Sprint 17: source_meta written by gtm_ingest_agent_lead() for Claude lead digest rows.
+type AgentMeta = {
+  agent?: string;
+  run_id?: string;
+  signal?: string;
+  signal_date?: string;
+  signal_url?: string;
+  sources?: string[];
+  source_urls?: string[];
+  what_they_sell?: string;
+  score_in?: number;
+  score_parts?: Record<string, number>;
+  best_channel?: string;
+};
+
+// source_meta is a short JSON string written by the engine or the agent; anything unreadable is ignored.
+function readMeta<T extends object>(text: string | null): T | null {
   if (!text) return null;
   try {
     const m = JSON.parse(text);
-    return m && typeof m === "object" ? (m as DirectoryMeta) : null;
+    return m && typeof m === "object" ? (m as T) : null;
   } catch {
     return null;
   }
 }
 
 const list = (v: string[] | undefined) => (Array.isArray(v) && v.length ? v.join(", ") : null);
+
+// A source link as readable text: no scheme, no trailing slash.
+const linkText = (url: string) => url.replace(/^https?:\/\//i, "").replace(/\/$/, "");
+
+function SourceLink({ url }: { url: string }) {
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex min-h-11 max-w-full items-center gap-1.5 font-medium underline underline-offset-4 sm:min-h-0"
+    >
+      <span className="min-w-0 wrap-anywhere">{linkText(url)}</span>
+      <ExternalLink className="size-3.5 shrink-0" aria-hidden />
+    </a>
+  );
+}
 
 type Event = {
   id: number;
@@ -197,7 +229,27 @@ export async function DraftDetail({ id, mode }: { id: string; mode: "page" | "pa
     (d.approval_status === "approved" || d.send_status === "sent") && d.account_status !== "rejected";
   const Title = mode === "page" ? "h1" : "h2";
   const gig = d.lead_track === "gig_post";
-  const meta = d.lead_track === "agency_partner" ? readMeta(d.source_meta) : null;
+  // Sprint 17 (ADR-133): Claude lead digest drafts. Their source_meta holds the agent's evidence,
+  // not a directory profile, even on the agency track.
+  const agent = isAgent(d.llm_provider);
+  const meta = d.lead_track === "agency_partner" && !agent ? readMeta<DirectoryMeta>(d.source_meta) : null;
+  const agentMeta = agent ? readMeta<AgentMeta>(d.source_meta) : null;
+  const signalUrl = httpUrl(typeof agentMeta?.signal_url === "string" ? agentMeta.signal_url : null);
+  const sourceUrls = [
+    ...new Set(
+      (Array.isArray(agentMeta?.source_urls) ? agentMeta.source_urls : [])
+        .map((u) => (typeof u === "string" ? httpUrl(u.trim()) : null))
+        .filter((u): u is string => u !== null && u !== signalUrl),
+    ),
+  ];
+  const whatTheySell = typeof agentMeta?.what_they_sell === "string" ? agentMeta.what_they_sell : null;
+  const scoreIn =
+    typeof agentMeta?.score_in === "number" && agentMeta.score_in !== d.final_score ? agentMeta.score_in : null;
+  const agentSources = Boolean(signalUrl || sourceUrls.length || whatTheySell || scoreIn !== null);
+  // The agent writes its signal to both trigger and clay_trigger, and the signal URL to angle_basis:
+  // show each once (the dated Trigger fact and the Agent sources links).
+  const sameTrigger = agent && (d.trigger ?? "").trim() === (d.clay_trigger ?? "").trim();
+  const sameBasis = agent && (d.angle_basis ?? "").trim() === (agentMeta?.signal_url ?? "").trim();
   const postUrl = httpUrl(d.gig_url);
   const profileUrl = httpUrl(meta?.profile_url ?? null);
 
@@ -217,6 +269,11 @@ export async function DraftDetail({ id, mode }: { id: string; mode: "page" | "pa
           {gate ? (
             <span className="inline-flex h-6 shrink-0 items-center rounded bg-secondary px-2 text-[0.8125rem] font-medium">
               Auto
+            </span>
+          ) : null}
+          {agent ? (
+            <span className="inline-flex h-6 shrink-0 items-center rounded bg-secondary px-2 text-[0.8125rem] font-medium">
+              Claude
             </span>
           ) : null}
           {/* Sprint 15: the lead track is a fact, not a state, so the chip stays neutral. */}
@@ -330,6 +387,39 @@ export async function DraftDetail({ id, mode }: { id: string; mode: "page" | "pa
         </Panel>
       ) : null}
 
+      {agentSources ? (
+        <Panel title="Agent sources">
+          <dl className="space-y-3">
+            {signalUrl ? (
+              <div className="space-y-0.5">
+                <dt className="text-[0.8125rem] font-medium text-muted-foreground">Signal</dt>
+                <dd>
+                  <SourceLink url={signalUrl} />
+                </dd>
+              </div>
+            ) : null}
+            {sourceUrls.length ? (
+              <div className="space-y-0.5">
+                <dt className="text-[0.8125rem] font-medium text-muted-foreground">Sources</dt>
+                <dd>
+                  <ul className="space-y-1">
+                    {sourceUrls.map((u) => (
+                      <li key={u}>
+                        <SourceLink url={u} />
+                      </li>
+                    ))}
+                  </ul>
+                </dd>
+              </div>
+            ) : null}
+            <Fact term="What they sell" value={whatTheySell} />
+          </dl>
+          {scoreIn !== null ? (
+            <p className="tabular text-[0.8125rem] text-ink-3">Score sent by the agent: {scoreIn}</p>
+          ) : null}
+        </Panel>
+      ) : null}
+
       {/* The pane is narrower than the page, so its side column only appears from xl. */}
       <div
         className={cn(
@@ -340,11 +430,16 @@ export async function DraftDetail({ id, mode }: { id: string; mode: "page" | "pa
         <Panel title="Why this person, why now">
           <dl className="space-y-3">
             <Fact term="Angle" value={idWords(d.angle)} />
-            <Fact term="Angle basis" value={d.angle_basis} />
+            <Fact term="Angle basis" value={sameBasis ? null : d.angle_basis} />
             <Fact term="Account type" value={idWords(d.account_type)} />
             <Fact term="Product category" value={idWords(d.product_category)} />
-            <Fact term="Trigger" value={d.trigger} />
-            <ClayTriggerFact trigger={d.clay_trigger} source={d.clay_trigger_source} date={d.clay_trigger_date} />
+            <Fact term="Trigger" value={sameTrigger ? null : d.trigger} />
+            <ClayTriggerFact
+              trigger={d.clay_trigger}
+              source={d.clay_trigger_source}
+              date={d.clay_trigger_date}
+              label={d.clay_trigger_source === "claude agent" ? "Trigger" : undefined}
+            />
             <Fact term="Pain point" value={d.pain_point} />
             <Fact term="Value proposition" value={d.value_proposition} />
             <Fact term="Proof point" value={d.proof_point} />
@@ -401,7 +496,9 @@ export async function DraftDetail({ id, mode }: { id: string; mode: "page" | "pa
                 ? "Drafted by the template fallback, not an LLM"
                 : gate
                   ? `Not drafted. The ${gate} gate stopped it before any LLM call.`
-                  : `Drafted by ${d.llm_provider ?? "unknown"}`}
+                  : agent
+                    ? "Drafted by the Claude lead digest"
+                    : `Drafted by ${d.llm_provider ?? "unknown"}`}
             </p>
             <dl>
               <Fact term="Risk notes" value={d.risk_notes} />

@@ -28,6 +28,8 @@ export type QueueRow = {
   auto?: boolean;
   /** The gate's note, shown in place of the (empty) first line. */
   note?: string | null;
+  /** Sprint 17: drafted by the Claude lead digest, not the engine. */
+  agent?: boolean;
 };
 type Item = QueueRow & { leaving?: boolean };
 
@@ -114,6 +116,11 @@ function Row({
               Auto
             </span>
           ) : null}
+          {row.agent ? (
+            <span className="inline-flex h-6 shrink-0 items-center rounded bg-secondary px-2 text-[0.8125rem] font-medium">
+              Claude
+            </span>
+          ) : null}
           <span className="tabular ml-auto shrink-0 text-[0.8125rem] text-ink-3">{row.age}</span>
         </div>
         <div className="flex items-center gap-2 text-[0.8125rem] text-muted-foreground">
@@ -135,6 +142,7 @@ function Row({
 export function QueueWorkspace({
   tab,
   track = "all",
+  src = "all",
   rows,
   selectedId,
   showChips,
@@ -143,6 +151,8 @@ export function QueueWorkspace({
   tab: string;
   /** Sprint 15: lead track filter, kept in the URL when a row is picked. */
   track?: string;
+  /** Sprint 17: lead source filter, kept in the URL the same way. */
+  src?: string;
   rows: QueueRow[];
   selectedId: string | null;
   showChips: boolean;
@@ -174,7 +184,9 @@ export function QueueWorkspace({
     el?.scrollIntoView({ block: "nearest" });
   }
 
-  const base = `/queue?tab=${encodeURIComponent(tab)}${track !== "all" ? `&track=${encodeURIComponent(track)}` : ""}`;
+  const base =
+    `/queue?tab=${encodeURIComponent(tab)}${track !== "all" ? `&track=${encodeURIComponent(track)}` : ""}` +
+    `${src !== "all" ? `&src=${encodeURIComponent(src)}` : ""}`;
 
   function select(id: string | null, focus = false) {
     setPicked(id);

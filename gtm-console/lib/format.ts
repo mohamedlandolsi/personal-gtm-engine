@@ -37,6 +37,10 @@ export const FACTOR_LABELS: Record<string, string> = {
   capacity: "Capacity need",
   size: "Size fit",
   tz_lang: "Time zone and language",
+  // Sprint 17: Claude lead digest score parts (reach is stored as feasibility)
+  need: "Need signal",
+  timing: "Timing",
+  practical: "Practical fit",
 };
 
 // Sprint 15 (ADR-113): lead tracks, worded as the filter chips show them.
@@ -61,7 +65,27 @@ export const PLATFORM_LABELS: Record<string, string> = {
   make_forum: "Make community",
   hn_freelancer: "Hacker News",
   manual: "Added by hand",
+  agent_web: "Web (Claude agent)", // Sprint 17
 };
+
+// Sprint 17 (ADR-133): rows written by the Claude lead digest. Fits outreach_queue.llm_provider
+// and accounts.source, which both carry "claude_digest".
+export function isAgent(provider: string | null | undefined): boolean {
+  return provider === "claude_digest";
+}
+
+// Sprint 17: lead source filter on the queue.
+export const SOURCES = [
+  { key: "all", label: "All" },
+  { key: "engine", label: "Engine" },
+  { key: "agent", label: "Claude" },
+] as const;
+export type SourceKey = (typeof SOURCES)[number]["key"];
+
+export function sourceParam(v: string | string[] | undefined): SourceKey {
+  const s = Array.isArray(v) ? v[0] : v;
+  return SOURCES.some((t) => t.key === s) ? (s as SourceKey) : "all";
+}
 
 // Only render links that are plain web URLs (data comes from scrapers and Sheets).
 export function httpUrl(value: string | null): string | null {

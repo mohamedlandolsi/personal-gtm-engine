@@ -842,6 +842,35 @@ Consolidated from every ADR in the project docs (SPEC, Roadmap, Sprint 1 to 7 gu
 **Amendment (2026-11-16):** the first production `GTM Run` got HTTP 403 from the n8n experts listing on both engine passes (it answered 200 on 2026-11-15). A 403 counts as a refusal of automated access, so `sources.partner_directories.n8n.enabled` is now `false` (config rev `console-20261116-1102`) and no attempt is made to get around it. The Clay experts directory stays on. Turn n8n back on only after a single manual check shows the listing answers 200 again.
 **Source:** Sprints/Sprint 15 - Freelance and Agency Leads Plan.md (ADR-119); scripts/s15/SPIKE.md
 
+## ADR-133: The Claude lead digest is a source of the engine, with one write path
+**Status:** Accepted
+**Context:** The scheduled task wrote to Notion, outside the engine. It skipped Neon dedupe, the console, and the HubSpot sync.
+**Decision:** The agent writes only through `gtm_ingest_agent_lead(jsonb)`, which gates, dedupes, validates and inserts into `accounts`, `contacts`, `outreach_queue` (or `gig_posts`) and logs every call to `agent_ingest_log`. A read-only `gtm_agent_check()` runs before any enrichment.
+**Alternatives:** Keep Notion (two queues, no dedupe); a separate console tab (fixes the review place only); an n8n webhook (n8n runs on the laptop, not 24/7).
+**Trade-offs / consequences:** The Neon connector has owner rights, so "only call these two functions" is a prompt rule, not a database permission. The function and the log make any deviation visible, and a restricted role is not possible through this connector today.
+**Source:** Sprints/Sprint 17 - Claude Digest into the Console Guide.md (section 12); db/s17_agent_ingest.sql
+
+## ADR-134: Agent-owned rows live in Neon only
+**Status:** Accepted
+**Context:** Accounts and contacts are mirrored from Google Sheets; the push path runs Sheets Update Row by key.
+**Decision:** Rows with `source = 'claude_digest'` are Neon-owned. `gtm_sync_push_rows()` and `v_sync_health` skip them. IDs use the engine's format, so if the engine later sources the same domain, the Sheet row takes over the account and the existing agent draft still blocks a second draft.
+**Trade-offs / consequences:** The engine's own dedupe ledger (`seen_accounts`, an n8n Data Table) does not see agent domains, so the engine could still screen and enrich one. `v_agent_domains` exists for a later engine read if that ever costs credits.
+**Source:** Sprints/Sprint 17 - Claude Digest into the Console Guide.md (section 12); db/s17_agent_ingest.sql
+
+## ADR-135: Deterministic gates in the database, after the LLM
+**Status:** Accepted
+**Context:** The agent is an LLM; its arithmetic and formatting are not guaranteed.
+**Decision:** The database recomputes the score from five capped parts, enforces score >= 55, <= 200 people, a real domain and a named contact, and dedupes on domain, LinkedIn and email. Style problems (dashes, placeholders, lengths) park the draft as `needs_redraft` instead of dropping the lead. Scores are stored next to the engine's but come from a different rubric, so the console marks the source (a "Claude" chip and a Source filter on the queue).
+**Trade-offs / consequences:** Agent and engine scores are not directly comparable. Review both for two weeks before ranking them together.
+**Source:** Sprints/Sprint 17 - Claude Digest into the Console Guide.md (section 12); db/s17_agent_ingest.sql
+
+## ADR-136: No automated reads of forums, LinkedIn or Reddit by the agent
+**Status:** Accepted
+**Context:** ADR-119 found that the n8n and Make forum terms forbid automated access, and LinkedIn and Reddit have not passed the ADR-119 check.
+**Decision:** The agent uses search-result snippets for these sites and never opens their pages. Forum gigs keep arriving through the engine's Gmail lane. HN (Algolia API) and yc-oss stay allowed.
+**Trade-offs / consequences:** Fewer gig leads from LinkedIn and Reddit, and less context per lead from those places.
+**Source:** Sprints/Sprint 17 - Claude Digest into the Console Guide.md (section 12)
+
 ---
 
 ## Notes
