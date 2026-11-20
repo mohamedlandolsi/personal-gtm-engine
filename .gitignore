@@ -21,3 +21,6 @@ __pycache__/
 
 # Sprint 14 dry-run fixtures hold real prospect data (accounts, contacts): never commit
 scripts/s14/fixtures/
+
+# Sprint 16 scratch scripts and fixtures (live prospect pages and query output): local only
+scripts/s16/
