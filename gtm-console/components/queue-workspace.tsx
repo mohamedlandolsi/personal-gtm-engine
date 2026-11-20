@@ -30,6 +30,8 @@ export type QueueRow = {
   note?: string | null;
   /** Sprint 17: drafted by the Claude lead digest, not the engine. */
   agent?: boolean;
+  /** Sprint 18: a lane A draft (angle sample_list) that carries sample accounts. */
+  sampleList?: boolean;
 };
 type Item = QueueRow & { leaving?: boolean };
 
@@ -109,20 +111,31 @@ function Row({
         <div className="flex items-center gap-3">
           <span className="min-w-0 truncate font-semibold">{row.company_name ?? "Unknown company"}</span>
           <ScoreMeter score={row.final_score} />
-          {showChip ? <FadeStatusChip state={row.state} /> : null}
-          {/* Provenance, not a draft state: a neutral chip. */}
-          {row.auto ? (
-            <span className="inline-flex h-6 shrink-0 items-center rounded bg-secondary px-2 text-[0.8125rem] font-medium">
-              Auto
-            </span>
-          ) : null}
-          {row.agent ? (
-            <span className="inline-flex h-6 shrink-0 items-center rounded bg-secondary px-2 text-[0.8125rem] font-medium">
-              Claude
-            </span>
-          ) : null}
           <span className="tabular ml-auto shrink-0 text-[0.8125rem] text-ink-3">{row.age}</span>
         </div>
+        {/* Sprint 18: chips get their own wrapping line, so the company name keeps its room at 390 px
+            and in the 24rem desktop list. */}
+        {showChip || row.auto || row.agent || row.sampleList ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {showChip ? <FadeStatusChip state={row.state} /> : null}
+            {/* Provenance, not a draft state: a neutral chip. */}
+            {row.auto ? (
+              <span className="inline-flex h-6 shrink-0 items-center rounded bg-secondary px-2 text-[0.8125rem] font-medium">
+                Auto
+              </span>
+            ) : null}
+            {row.agent ? (
+              <span className="inline-flex h-6 shrink-0 items-center rounded bg-secondary px-2 text-[0.8125rem] font-medium">
+                Claude
+              </span>
+            ) : null}
+            {row.sampleList ? (
+              <span className="inline-flex h-6 shrink-0 items-center rounded bg-secondary px-2 text-[0.8125rem] font-medium whitespace-nowrap">
+                Sample list
+              </span>
+            ) : null}
+          </div>
+        ) : null}
         <div className="flex items-center gap-2 text-[0.8125rem] text-muted-foreground">
           <ChannelIcon channel={row.channel} className="size-3.5 shrink-0" />
           <span className="truncate">

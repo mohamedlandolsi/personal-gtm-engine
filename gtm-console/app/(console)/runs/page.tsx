@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { TriangleAlert } from "lucide-react";
+import { ExternalLink, TriangleAlert } from "lucide-react";
 import { sql } from "@/lib/db";
 import { requireSession } from "@/lib/session";
-import { formatAge, timeAgo } from "@/lib/format";
+import { formatAge, httpUrl, timeAgo } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { SegmentedLinks } from "@/components/segmented-links";
 
@@ -99,6 +99,22 @@ type AgentRun = {
   duplicates: number;
   rejected: number;
   errors: number;
+  routed: number; // Sprint 18: job openings logged instead of pitched
+};
+
+// Sprint 18 (ADR-141): v_agent_job_openings. All job fields are the agent's text, posted_at included.
+type JobOpening = {
+  id: number;
+  created_at: Date;
+  company: string | null;
+  domain: string | null;
+  title: string | null;
+  url: string | null;
+  location: string | null;
+  remote: string | null;
+  salary: string | null;
+  posted_at: string | null;
+  why_fit: string | null;
 };
 
 type Quarantined = { link_type: string; local_id: string; failures: number; last_error: string | null };
@@ -242,6 +258,77 @@ function EngineTab({ rows }: { rows: EngineRun[] }) {
   );
 }
 
+// Sprint 18 (ADR-141): full-time roles the digest found, logged for you, never pitched.
+function JobsCard({ rows }: { rows: JobOpening[] }) {
+  const title = (j: JobOpening) => {
+    const url = httpUrl(j.url);
+    const text = j.title ?? "Untitled role";
+    return url ? (
+      <a href={url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 font-medium underline underline-offset-4">
+        <span className="min-w-0 wrap-anywhere">{text}</span>
+        <ExternalLink className="size-3.5 shrink-0" aria-hidden />
+      </a>
+    ) : (
+      <span className="font-medium wrap-anywhere">{text}</span>
+    );
+  };
+  // The remote scope ("worldwide", "EMEA"). The agent sometimes sends a boolean, which the view
+  // returns as "true" or "false"; the location fills in when there is no scope.
+  const where = (j: JobOpening) => {
+    const r = j.remote?.trim().toLowerCase();
+    if (r === "true") return j.location ? (/remote/i.test(j.location) ? j.location : `Remote, ${j.location}`) : "Remote";
+    if (r === "false") return j.location ? `On site, ${j.location}` : "On site";
+    return j.remote ? `Remote ${j.remote}` : (j.location ?? "");
+  };
+  return (
+    <section className="space-y-2" aria-labelledby="agent-job-openings">
+      <h2 id="agent-job-openings" className="text-[1.0625rem] leading-snug font-semibold">Jobs to apply to</h2>
+      {rows.length === 0 ? (
+        <div className="rounded-lg border bg-card px-4 py-8 text-center">
+          <p>No job openings yet. The Claude lead digest logs roles you could apply to here instead of pitching them.</p>
+        </div>
+      ) : (
+        <>
+          <TableShell>
+            <thead>
+              <tr className={HEAD}>
+                <Th>Company</Th><Th>Title</Th><Th>Remote</Th><Th>Salary</Th><Th>Posted</Th><Th>Why it fits</Th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {rows.map((j) => (
+                <tr key={j.id} className={ROW}>
+                  <td className="px-3 py-2.5 font-medium">{j.company}</td>
+                  <td className="min-w-48 max-w-[16rem] px-3 py-2.5">{title(j)}</td>
+                  <td className="max-w-[12rem] px-3 py-2.5 wrap-anywhere">{where(j)}</td>
+                  <td className="max-w-[14rem] px-3 py-2.5 text-[0.8125rem]">{j.salary}</td>
+                  <td className="tabular px-3 py-2.5 whitespace-nowrap text-ink-3">{j.posted_at}</td>
+                  <td className="max-w-[18rem] px-3 py-2.5 text-[0.8125rem]"><Expandable text={j.why_fit} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </TableShell>
+          <Blocks>
+            {rows.map((j) => (
+              <li key={j.id} className="space-y-1 px-4 py-3 text-[0.9375rem]">
+                <div className="flex items-baseline gap-2">
+                  <span className="min-w-0 truncate font-semibold">{j.company}</span>
+                  {j.posted_at ? <span className="tabular ml-auto shrink-0 text-[0.8125rem] text-ink-3">{j.posted_at}</span> : null}
+                </div>
+                <div className="flex min-h-11 items-center sm:min-h-0">{title(j)}</div>
+                {where(j) || j.salary ? (
+                  <p className="text-[0.8125rem] text-muted-foreground">{[where(j), j.salary].filter(Boolean).join(", ")}</p>
+                ) : null}
+                {j.why_fit ? <div className="text-[0.8125rem]"><Expandable text={j.why_fit} /></div> : null}
+              </li>
+            ))}
+          </Blocks>
+        </>
+      )}
+    </section>
+  );
+}
+
 // Sprint 17: the Claude lead digest is a second lead source, so its runs sit under the engine's.
 function AgentDigestCard({ rows }: { rows: AgentRun[] }) {
   const errors = (r: AgentRun) => (r.errors > 0 ? <Flag tone="danger">{r.errors}</Flag> : r.errors);
@@ -260,7 +347,7 @@ function AgentDigestCard({ rows }: { rows: AgentRun[] }) {
             <thead>
               <tr className={HEAD}>
                 <Th>Run</Th><Th>When</Th><Th right>Inserted</Th><Th right>Re-draft</Th><Th right>Duplicates</Th>
-                <Th right>Rejected</Th><Th right>Errors</Th>
+                <Th right>Rejected</Th><Th right>Routed</Th><Th right>Errors</Th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -272,6 +359,7 @@ function AgentDigestCard({ rows }: { rows: AgentRun[] }) {
                   <Num>{r.needs_redraft}</Num>
                   <Num>{r.duplicates}</Num>
                   <Num>{r.rejected}</Num>
+                  <Num>{r.routed}</Num>
                   <td className="tabular px-3 py-2.5 text-right">{errors(r)}</td>
                 </tr>
               ))}
@@ -286,7 +374,8 @@ function AgentDigestCard({ rows }: { rows: AgentRun[] }) {
                 </div>
                 <p className="tabular">
                   <strong>{r.inserted}</strong> inserted, <strong>{r.needs_redraft}</strong> to re-draft,{" "}
-                  <strong>{r.duplicates}</strong> {r.duplicates === 1 ? "duplicate" : "duplicates"}, <strong>{r.rejected}</strong> rejected
+                  <strong>{r.duplicates}</strong> {r.duplicates === 1 ? "duplicate" : "duplicates"}, <strong>{r.rejected}</strong> rejected,{" "}
+                  <strong>{r.routed}</strong> routed
                 </p>
                 {r.errors > 0 ? (
                   <Flag tone="danger">
@@ -589,7 +678,7 @@ export default async function RunsPage({ searchParams }: PageProps<"/runs">) {
 
   let body: React.ReactNode;
   if (tab === "engine") {
-    const [rows, agentRuns] = (await Promise.all([
+    const [rows, agentRuns, jobs] = (await Promise.all([
       sql`
         select run_at, config_rev, accounts_written, contacts_written, outreach_drafts_written,
                llm_calls, llm_failures, warnings, errors_sample
@@ -597,13 +686,19 @@ export default async function RunsPage({ searchParams }: PageProps<"/runs">) {
       // Sprint 17: the Claude lead digest's runs (ADR-133)
       sql`
         select run_id, agent, started_at, inserted::int as inserted, needs_redraft::int as needs_redraft,
-               duplicates::int as duplicates, rejected::int as rejected, errors::int as errors
+               duplicates::int as duplicates, rejected::int as rejected, errors::int as errors,
+               routed::int as routed
         from v_agent_ingest_runs order by started_at desc limit 10`,
-    ])) as [EngineRun[], AgentRun[]];
+      // Sprint 18 (ADR-141): roles the digest routed to you instead of pitching
+      sql`
+        select id::int as id, created_at, company, domain, title, url, location, remote, salary, posted_at, why_fit
+        from v_agent_job_openings order by created_at desc, id desc limit 20`,
+    ])) as [EngineRun[], AgentRun[], JobOpening[]];
     body = (
       <>
         <EngineTab rows={rows} />
         <AgentDigestCard rows={agentRuns} />
+        <JobsCard rows={jobs} />
       </>
     );
   } else if (tab === "gigs") {

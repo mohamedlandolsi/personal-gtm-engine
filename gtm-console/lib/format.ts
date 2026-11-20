@@ -74,6 +74,70 @@ export function isAgent(provider: string | null | undefined): boolean {
   return provider === "claude_digest";
 }
 
+// Sprint 18 (ADR-137): outreach_queue.angle in words where idWords() is not enough.
+export const ANGLE_LABELS: Record<string, string> = {
+  sample_list: "Sample list",
+};
+
+// Sprint 18: source_meta.lane of a Claude lead digest row.
+export const LANE_LABELS: Record<string, string> = {
+  pipeline_build: "Pipeline build",
+  hiring_signal: "Hiring signal",
+  agency_partner: "Agency partner",
+  seeking_freelancer: "Seeking freelancer",
+};
+
+// Sprint 18 (ADR-140): one sample account, validated and stored by gtm_ingest_agent_lead().
+export type SampleRow = {
+  company?: string;
+  domain?: string;
+  trigger?: string;
+  trigger_date?: string;
+  trigger_url?: string;
+  buyer_title?: string;
+};
+
+export type Funding = {
+  stage?: string;
+  amount_musd?: number;
+  date?: string;
+  lead_investor?: string;
+  url?: string;
+};
+
+// source_meta written by gtm_ingest_agent_lead() for Claude lead digest rows (Sprint 17, extended in
+// Sprint 18). Every key can be missing: the database strips nulls.
+export type AgentMeta = {
+  agent?: string;
+  run_id?: string;
+  lane?: string;
+  signal?: string;
+  signal_date?: string;
+  signal_url?: string;
+  signal_author?: { name?: string; role?: string };
+  sources?: string[];
+  source_urls?: string[];
+  what_they_sell?: string;
+  site_tagline?: string;
+  sells_to?: string;
+  funding?: Funding;
+  revenue_signal?: string;
+  gtm_people?: number;
+  buyer_pool?: number;
+  sample?: SampleRow[];
+  sample_dropped?: number;
+  score_in?: number;
+  score_parts?: Record<string, number>;
+  best_channel?: string;
+};
+
+// 2.2 -> "$2.2M", 25 -> "$25M", 0.5 -> "$500K"
+export function formatMusd(v: number | null | undefined): string | null {
+  if (typeof v !== "number" || !Number.isFinite(v) || v <= 0) return null;
+  if (v < 1) return `$${Math.round(v * 1000)}K`;
+  return `$${Number(v.toFixed(1))}M`;
+}
+
 // Sprint 17: lead source filter on the queue.
 export const SOURCES = [
   { key: "all", label: "All" },

@@ -34,6 +34,7 @@ type Row = {
   send_status: string;
   llm_provider: string | null;
   notes: string | null;
+  angle: string | null;
 };
 
 export default async function QueuePage({ searchParams }: PageProps<"/queue">) {
@@ -63,7 +64,7 @@ export default async function QueuePage({ searchParams }: PageProps<"/queue">) {
 
   const rows = (await sql`
     select outreach_id, company_name, final_score, contact_name, contact_title, channel,
-           first_line, run_date, approval_status, send_status, llm_provider, notes
+           first_line, run_date, approval_status, send_status, llm_provider, notes, angle
     from v_review_queue
     where ((${tab} = 'review'   and approval_status in ('pending','edited') and send_status = 'not_sent')
        or (${tab} = 'redraft'  and approval_status = 'needs_redraft' and send_status = 'not_sent')
@@ -82,6 +83,8 @@ export default async function QueuePage({ searchParams }: PageProps<"/queue">) {
     return {
     auto,
     agent: isAgent(r.llm_provider),
+    // Sprint 18 (ADR-137): lane A drafts carry a list of sample accounts.
+    sampleList: r.angle === "sample_list",
     note: auto ? r.notes : null,
     outreach_id: r.outreach_id,
     company_name: r.company_name,

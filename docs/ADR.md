@@ -110,6 +110,30 @@ Consolidated from every ADR in the project docs (SPEC, Roadmap, Sprint 1 to 7 gu
 | ADR-117 | A directory listing is the agency trigger; no product-overlap gate on the agency track | Accepted |
 | ADR-118 | No Clay research credits on the agency track | Accepted |
 | ADR-119 | Every new source passes a go/no-go check on robots.txt and terms | Accepted |
+| ADR-120 | Triggers come from a cached Tavily news search | Accepted |
+| ADR-121 | Sprint 16 does not depend on Clay | Accepted |
+| ADR-122 | An smb_direct ICP gate on stage, headcount and round size | Accepted |
+| ADR-123 | Founder role from YC bios and the team page; a buying founder beats email | Accepted |
+| ADR-124 | Motion v2 weights the hero and ignores a trial behind a demo | Accepted |
+| ADR-125 | A detected tool reaches the copy only for its workflow role | Accepted |
+| ADR-126 | Validator v4 | Accepted |
+| ADR-127 | Footer and article fixes are added by code after validation | Accepted |
+| ADR-128 | Clay people search counts current GTM people | Accepted |
+| ADR-129 | Consent countries get LinkedIn only | Accepted |
+| ADR-130 | No draft without a fresh Clay check that the contact is current | Accepted |
+| ADR-131 | A Clay Free plan budget | Accepted |
+| ADR-132 | Clay headcount is stored and flagged, not used by the size gate | Accepted |
+| ADR-133 | The Claude lead digest is a source of the engine, with one write path | Accepted |
+| ADR-134 | Agent-owned rows live in Neon only | Accepted |
+| ADR-135 | Deterministic gates in the database, after the LLM | Accepted |
+| ADR-136 | No automated reads of forums, LinkedIn or Reddit by the agent | Accepted |
+| ADR-137 | A pipeline-build lane with a sample-list offer | Accepted |
+| ADR-138 | Lane A gates in the database | Accepted |
+| ADR-139 | The engine's product-overlap gate also runs on agent leads | Accepted |
+| ADR-140 | Sample rows are company-level and rendered by the database | Accepted |
+| ADR-141 | Jobs are routed, not pitched | Accepted |
+| ADR-142 | Attribution and fresh-funding validators | Accepted |
+| ADR-143 | Lane A need score counts sales people, not "no sales hire" | Accepted |
 
 ---
 
@@ -842,6 +866,110 @@ Consolidated from every ADR in the project docs (SPEC, Roadmap, Sprint 1 to 7 gu
 **Amendment (2026-11-16):** the first production `GTM Run` got HTTP 403 from the n8n experts listing on both engine passes (it answered 200 on 2026-11-15). A 403 counts as a refusal of automated access, so `sources.partner_directories.n8n.enabled` is now `false` (config rev `console-20261116-1102`) and no attempt is made to get around it. The Clay experts directory stays on. Turn n8n back on only after a single manual check shows the listing answers 200 again.
 **Source:** Sprints/Sprint 15 - Freelance and Agency Leads Plan.md (ADR-119); scripts/s15/SPIKE.md
 
+## ADR-120: Triggers come from a cached Tavily news search
+**Status:** Accepted
+**Context:** Clay results only arrive through `GTM Clay Bridge`, which has a Manual Trigger only. On 2026-11-16, 49 accounts were `queued`, the last `clay_enriched_at` was 2026-10-23, and `clay_merged = 0` on all 6 runs since Nov 12, so drafts had no trigger fact.
+**Decision:** Triggers come from a Tavily news search, cached in the Neon table `trigger_checks` and parsed by fixed rules (no LLM) into `TRIGGER_FACT`.
+**Alternatives:** Wait for Clay; search at draft time without a cache.
+**Trade-offs / consequences:** Up to 10 Tavily credits per run out of 1,000 a month, shared with the Contact Finder. A news search misses hiring posts that never make the news.
+**Source:** Sprints/Sprint 16 - Draft Accuracy Fixes Guide (Part 2).md (ADRs and trade-offs); Sprints/Sprint 16 - Draft Accuracy Fixes Guide.md (live check of 2026-11-16)
+
+## ADR-121: Sprint 16 does not depend on Clay
+**Status:** Accepted
+**Context:** The Clay Bridge had not run since late October, and running it is a manual step.
+**Decision:** Sprint 16 does not depend on Clay. Clay stays a manual, optional enrichment.
+**Alternatives:** Automate the Clay Bridge now.
+**Trade-offs / consequences:** 49 queued accounts keep `clay_status = queued`. Clay signals return only when you run the table and the bridge.
+**Source:** Sprints/Sprint 16 - Draft Accuracy Fixes Guide (Part 2).md (ADRs and trade-offs); Sprints/Sprint 16 - Draft Accuracy Fixes Guide.md (step 1.3)
+
+## ADR-122: An smb_direct ICP gate on stage, headcount and round size
+**Status:** Accepted
+**Context:** YC size and stage are stale. `funding_stage = growth` already existed on Payflow, Oneleet and Humaans (S14 Fix 9), but nothing read it for `smb_direct`; Upflow was `seed` with 50 staff.
+**Decision:** The `smb_direct` ICP gate drops accounts in the `growth` stage, with more than 40 staff, or with a round of 15M or more.
+**Alternatives:** Lower the score of large accounts.
+**Trade-offs / consequences:** Clear and testable; loses the rare large company with a real small task. Override with `lead_tracks.smb_direct.employee_max`.
+**Source:** Sprints/Sprint 16 - Draft Accuracy Fixes Guide (Part 2).md (ADRs and trade-offs); Sprints/Sprint 16 - Draft Accuracy Fixes Guide.md (live check of 2026-11-16)
+
+## ADR-123: Founder role from YC bios and the team page; a buying founder beats email
+**Status:** Accepted
+**Context:** `YC Founders` (Contact Finder) writes `title = f.title or 'Founder'` and YC's title is always "Founder" (72 of 105 contacts at YC accounts), so `buyerScore()` was 70 for all and `contact_score` picked whoever had a verified email.
+**Decision:** The founder's role is read from text YC or the company already publishes (YC bios and one team-page GET). In `Select Outreach Pairs`, a buying founder without email beats a technical founder with one.
+**Alternatives:** A Tavily title search per founder; keep the email-first tie-break.
+**Trade-offs / consequences:** More LinkedIn-only drafts (the Pedro type), which you send by hand; 1 extra GET per account.
+**Source:** Sprints/Sprint 16 - Draft Accuracy Fixes Guide (Part 2).md (ADRs and trade-offs, Phase 4); Sprints/Sprint 16 - Draft Accuracy Fixes Guide.md (live check of 2026-11-16)
+
+## ADR-124: Motion v2 weights the hero and ignores a trial behind a demo
+**Status:** Accepted
+**Context:** `pickAngle()` checked `site.demo` before `site.selfserve`, so any page with both was demo-led, and `motionOf()` ran regexes on raw HTML, where tags can split "Book a Demo".
+**Decision:** Motion v2 reads text, not HTML, counts the hero double, and does not treat a trial offered behind a demo as self-serve.
+**Alternatives:** Ask the LLM which motion the page has.
+**Trade-offs / consequences:** A regex can still misread a page; the Phase 1 fixtures catch regressions.
+**Source:** Sprints/Sprint 16 - Draft Accuracy Fixes Guide (Part 2).md (ADRs and trade-offs, Phase 5); Sprints/Sprint 16 - Draft Accuracy Fixes Guide.md (live check of 2026-11-16)
+
+## ADR-125: A detected tool reaches the copy only for its workflow role
+**Status:** Accepted
+**Context:** Detection was right (Noloco loads Segment, Payflow the Apollo website tracker, Humaans the LinkedIn Insight Tag, Upflow WordPress), but `companyTools()` allowed every detected tool in copy, whatever it does.
+**Decision:** A detected tool appears in copy only for its workflow role. Analytics, tracking and website tools never do.
+**Alternatives:** Trust detection alone (Sprint 14).
+**Trade-offs / consequences:** Drafts lose some specificity (Segment, Webflow) to stay correct.
+**Source:** Sprints/Sprint 16 - Draft Accuracy Fixes Guide (Part 2).md (ADRs and trade-offs, Phase 5); Sprints/Sprint 16 - Draft Accuracy Fixes Guide.md (live check of 2026-11-16)
+
+## ADR-126: Validator v4
+**Status:** Accepted
+**Context:** The overclaim rule only matched the verb "built", and since the S14 patch a "built" sentence passed when it shared 2 words with any configured proof (the Noloco note passed).
+**Decision:** Validator v4 rejects any first-person build verb, client work, a tool in my claims unless it is my stack, a CTA opener and a company vocative, and keeps the brief to the team.
+**Alternatives:** Fix it in the prompt only.
+**Trade-offs / consequences:** More first-attempt failures, mitigated by `hints()` and measured as `v4_*` counters.
+**Source:** Sprints/Sprint 16 - Draft Accuracy Fixes Guide (Part 2).md (ADRs and trade-offs, Phase 5); Sprints/Sprint 16 - Draft Accuracy Fixes Guide.md (live check of 2026-11-16)
+
+## ADR-127: Footer and article fixes are added by code after validation
+**Status:** Accepted
+**Context:** The opt-out line, name and site, and article fixes, were added by hand at send time.
+**Decision:** Code adds the footer (opt-out line, name, site) and the article fixes after validation, never the LLM, for every email on every track.
+**Alternatives:** Keep adding them by hand at send time.
+**Trade-offs / consequences:** One more string in config. The validator never sees the footer, so it cannot trip the link rule.
+**Source:** Sprints/Sprint 16 - Draft Accuracy Fixes Guide (Part 2).md (ADRs and trade-offs, Phase 5)
+
+## ADR-128: Clay people search counts current GTM people
+**Status:** Accepted
+**Context:** A team that already has GTM people will not buy a small GTM build from an entry-level freelancer (Zeit AI, Trackingplan, Noloco). Clay people search lists current employees with titles at 0 credits; a Tavily people search found 0 GTM profiles.
+**Decision:** Clay people search counts current non-founder GTM people: 2 or more means a visible gate row (scope `account`), exactly 1 means score minus 15.
+**Alternatives:** Tavily people search (tested: 0 GTM profiles at Trackingplan and Noloco); scraping LinkedIn (against its terms); YC headcount.
+**Trade-offs / consequences:** Up to 2 Clay results per account. "Growth" titles are fuzzy, so a marketing generalist can count; B16 spot-checks.
+**Source:** Sprints/Sprint 16 - Draft Accuracy Fixes Guide (Part 2).md (ADRs and trade-offs); Sprints/Sprint 16 - Draft Accuracy Fixes Guide.md (investigation of 2026-11-16, section 3.4)
+
+## ADR-129: Consent countries get LinkedIn only
+**Status:** Accepted
+**Context:** German B2B cold email needs prior consent (UWG §7(2) No. 2). Zeit AI is in Munich, and nothing in the engine knew the country rule.
+**Decision:** Countries where B2B cold email needs prior consent (`outreach.email_consent_countries`, default Germany and Austria) get LinkedIn only.
+**Alternatives:** Email everyone with legitimate interest and an opt-out.
+**Trade-offs / consequences:** Fewer emails in DACH, slower sends by hand. Not legal advice; the list is config.
+**Source:** Sprints/Sprint 16 - Draft Accuracy Fixes Guide (Part 2).md (ADRs and trade-offs); Sprints/Sprint 16 - Draft Accuracy Fixes Guide.md (live check of 2026-11-16)
+
+## ADR-130: No draft without a fresh Clay check that the contact is current
+**Status:** Accepted
+**Context:** YC still listed Pedro Trujillano as a Trackingplan founder after he left in April 2025. A contact was found once and never re-checked.
+**Decision:** No draft without a Clay check from the last 14 days that lists the contact as current. YC founders are leads; leavers become `left_company`; current leaders Clay finds are added.
+**Alternatives:** Trust YC plus a one-time lookup (the Pedro case).
+**Trade-offs / consequences:** Up to 3 Clay results per account. When the leader list is full (3), a missing contact is unknown and the account waits a run.
+**Source:** Sprints/Sprint 16 - Draft Accuracy Fixes Guide (Part 2).md (ADRs and trade-offs, contact freshness rules); Sprints/Sprint 16 - Draft Accuracy Fixes Guide.md (investigation of 2026-11-16)
+
+## ADR-131: A Clay Free plan budget
+**Status:** Accepted
+**Context:** Clay's Public API is open on the Free plan, but it returns at most 100 results per rolling 30 days (HTTP 402 when exceeded), and one account check costs up to 5 results.
+**Decision:** Only pairs about to be drafted are checked: 4 accounts per run, a 30-day cache, 90 of the 100 results per rolling 30 days, stop on HTTP 402. Unverified pairs are skipped.
+**Alternatives:** A Clay trial or a paid plan; another people-data API (Apollo was not tested here).
+**Trade-offs / consequences:** About 18 verified accounts a month, so fewer `smb_direct` drafts. If Phase 1 shows Clay connector searches do not count toward the 100, a Cowork review-prep check covers overflow.
+**Source:** Sprints/Sprint 16 - Draft Accuracy Fixes Guide (Part 2).md (ADRs and trade-offs); Sprints/Sprint 16 - Draft Accuracy Fixes Guide.md (investigation of 2026-11-16, section 3.4)
+
+## ADR-132: Clay headcount is stored and flagged, not used by the size gate
+**Status:** Accepted
+**Context:** Clay's headcount disagreed with the engine's on all 5 tested accounts, with Alguna the outlier (83 vs 10).
+**Decision:** Clay headcount is stored next to the engine's. A gap over 3x is flagged, and the size gate does not use it yet.
+**Alternatives:** Replace YC headcount with Clay's now.
+**Trade-offs / consequences:** Alguna shows the risk: a LinkedIn page can count people who only list the company.
+**Source:** Sprints/Sprint 16 - Draft Accuracy Fixes Guide (Part 2).md (ADRs and trade-offs); Sprints/Sprint 16 - Draft Accuracy Fixes Guide.md (investigation of 2026-11-16)
+
 ## ADR-133: The Claude lead digest is a source of the engine, with one write path
 **Status:** Accepted
 **Context:** The scheduled task wrote to Notion, outside the engine. It skipped Neon dedupe, the console, and the HubSpot sync.
@@ -870,6 +998,56 @@ Consolidated from every ADR in the project docs (SPEC, Roadmap, Sprint 1 to 7 gu
 **Decision:** The agent uses search-result snippets for these sites and never opens their pages. Forum gigs keep arriving through the engine's Gmail lane. HN (Algolia API) and yc-oss stay allowed.
 **Trade-offs / consequences:** Fewer gig leads from LinkedIn and Reddit, and less context per lead from those places.
 **Source:** Sprints/Sprint 17 - Claude Digest into the Console Guide.md (section 12)
+
+## ADR-137: A pipeline-build lane with a sample-list offer
+**Status:** Accepted
+**Context:** The engine's YC lane pitches generic lead-routing automation (94 drafts, 10 approved). The agent's hiring lane finds few targets and some are jobs, not clients.
+**Decision:** Lane A targets B2B startups with a product and no outbound engine, and every first message carries 3 to 5 real accounts that fit the prospect's buyer, with a dated trigger each. `lead_track` stays `smb_direct`; the lane is the angle `sample_list` plus `source_meta.lane`.
+**Alternatives:** A new `lead_track` value (HubSpot would accept it, its property is single-line text, but the engine reads `lead_track` back through `n8n_outreach_queue_sheet` and per-track config, so a new value is a risk); changing the engine's angle library first (n8n Code work; do it later if lane A wins).
+**Trade-offs / consequences:** More agent work and Tavily calls per lead, so fewer leads per run.
+**Source:** Sprints/Sprint 18 - Pipeline Lane and Agent Fixes Guide.md (section 12); db/s18_pipeline_lane.sql
+
+## ADR-138: Lane A gates in the database
+**Status:** Accepted
+**Context:** A lane A pitch only works when the prospect has a budget, no sales team, a buyer that can be found and real sample rows. The agent is an LLM, so these rules belong in the database (ADR-135).
+**Decision:** `buyer_pool >= 20`, a round in the last 12 months or a revenue signal, fewer than 3 sales people, and at least 3 valid sample rows (dated within 120 days, with a source URL).
+**Trade-offs / consequences:** `buyer_pool` and `gtm_people` are numbers the agent reads from Clay search; the database cannot verify them. They are stored in `source_meta` for audit, and the Phase B hand test checked them by hand.
+**Source:** Sprints/Sprint 18 - Pipeline Lane and Agent Fixes Guide.md (section 12); db/s18_pipeline_lane.sql
+
+## ADR-139: The engine's product-overlap gate also runs on agent leads
+**Status:** Accepted
+**Context:** Evaboot sells lead export and email finding, and the agent pitched it lead lists: the agent path lacked the engine's overlap gate (ADR-106).
+**Decision:** The Sprint 14 categories (ADR-106) are ported to `gtm_overlap_category()` and applied to lanes A and B on company name, homepage tagline, what they sell and industry. The enrichment rule adds email finders, lead lists and Sales Navigator tools.
+**Trade-offs / consequences:** Same misses as the engine (vertical "workflow automation" tools get rejected), and the result depends on the agent copying the tagline verbatim.
+**Source:** Sprints/Sprint 18 - Pipeline Lane and Agent Fixes Guide.md (sections 2 and 12); db/s18_pipeline_lane.sql
+
+## ADR-140: Sample rows are company-level and rendered by the database
+**Status:** Accepted
+**Context:** The lane A offer is proof: real accounts that fit the prospect's buyer, in a cold email to a stranger.
+**Decision:** Each row is company, domain, trigger, date, buyer title and source URL. No names or emails of people at the sample companies. The database formats the list (5 rows by email, 3 on LinkedIn) and appends the signature.
+**Trade-offs / consequences:** Less striking than named contacts, but no third-party personal data in a cold email to a stranger, and the format is identical across leads.
+**Source:** Sprints/Sprint 18 - Pipeline Lane and Agent Fixes Guide.md (section 12); db/s18_pipeline_lane.sql
+
+## ADR-141: Jobs are routed, not pitched
+**Status:** Accepted
+**Context:** Evaboot's HN post (item 50341833) was a job Mohamed could apply to, and the agent had no "job" outcome, so it pitched it.
+**Decision:** A full-time or part-time role he could get (remote or relocation, about 2 years or less, matching skills) becomes `job_opening`: logged, deduped by URL, listed in `v_agent_job_openings`, never drafted.
+**Trade-offs / consequences:** No interim-contract pitch to those companies. Lane B still pitches interim builds when the role is not one he could take.
+**Source:** Sprints/Sprint 18 - Pipeline Lane and Agent Fixes Guide.md (sections 2 and 12); db/s18_pipeline_lane.sql
+
+## ADR-142: Attribution and fresh-funding validators
+**Status:** Accepted
+**Context:** In the review of 2026-11-18, 2 of 3 agent drafts credited an HN post to the wrong co-founder (Evaboot, Perry), and Perry's $2.2M seed, announced that day, was not used.
+**Decision:** "Your post" phrasing is allowed only when `signal_author` is the contact; a round dated within 30 days must be mentioned. Both park the draft in Re-draft.
+**Trade-offs / consequences:** Regex rules miss some phrasings and can flag harmless ones; a false flag costs one edit.
+**Source:** Sprints/Sprint 18 - Pipeline Lane and Agent Fixes Guide.md (sections 2 and 12); db/s18_pipeline_lane.sql
+
+## ADR-143: Lane A need score counts sales people, not "no sales hire"
+**Status:** Accepted
+**Context:** In the hand test the original rule ("round in the last 60 days and no sales hire 30") failed all three startups, including a 9-day-old $25M seed with two commercial people. The database gate already rejects 3 or more sales people.
+**Decision:** Round in the last 60 days and `gtm_people` 2 or fewer: 30. New tier: round 61 to 180 days ago and `gtm_people` 2 or fewer: 22. Prompt-only change; the database still recomputes from the parts and rejects under 55.
+**Trade-offs / consequences:** Startups with one or two fresh commercial hires now pass; those hires may already own pipeline. The sample list is still the test: a lead without 3 verified rows never reaches the console.
+**Source:** Sprints/Sprint 18 - Pipeline Lane and Agent Fixes Guide.md (sections 7 and 12)
 
 ---
 

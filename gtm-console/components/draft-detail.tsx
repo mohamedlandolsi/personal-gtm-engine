@@ -3,7 +3,22 @@ import { notFound } from "next/navigation";
 import { CircleCheck, ExternalLink, TriangleAlert } from "lucide-react";
 import { sql } from "@/lib/db";
 import { requireSession } from "@/lib/session";
-import { PLATFORM_LABELS, REJECT_SCOPE_LABELS, TRACK_LABELS, displayState, gateName, httpUrl, idWords, isAgent, timeAgo } from "@/lib/format";
+import {
+  ANGLE_LABELS,
+  type AgentMeta,
+  LANE_LABELS,
+  PLATFORM_LABELS,
+  REJECT_SCOPE_LABELS,
+  type SampleRow,
+  TRACK_LABELS,
+  displayState,
+  formatMusd,
+  gateName,
+  httpUrl,
+  idWords,
+  isAgent,
+  timeAgo,
+} from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ChannelIcon, channelLabel } from "@/components/channel-icon";
 import { readHubspotCfg } from "@/lib/hubspot";
@@ -81,21 +96,6 @@ type DirectoryMeta = {
   profile_url?: string;
 };
 
-// Sprint 17: source_meta written by gtm_ingest_agent_lead() for Claude lead digest rows.
-type AgentMeta = {
-  agent?: string;
-  run_id?: string;
-  signal?: string;
-  signal_date?: string;
-  signal_url?: string;
-  sources?: string[];
-  source_urls?: string[];
-  what_they_sell?: string;
-  score_in?: number;
-  score_parts?: Record<string, number>;
-  best_channel?: string;
-};
-
 // source_meta is a short JSON string written by the engine or the agent; anything unreadable is ignored.
 function readMeta<T extends object>(text: string | null): T | null {
   if (!text) return null;
@@ -123,6 +123,97 @@ function SourceLink({ url }: { url: string }) {
       <span className="min-w-0 wrap-anywhere">{linkText(url)}</span>
       <ExternalLink className="size-3.5 shrink-0" aria-hidden />
     </a>
+  );
+}
+
+const str = (v: unknown) => (typeof v === "string" && v.trim() !== "" ? v.trim() : null);
+const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+
+// Sprint 18 (ADR-140): the sample accounts behind a lane A pitch, so each trigger can be checked
+// at its source before approving. Stacked cards on phones, a table from lg (xl in the narrower pane).
+function SampleList({ rows, dropped, mode }: { rows: SampleRow[]; dropped: number; mode: "page" | "pane" }) {
+  const items = rows.map((r, i) => {
+    const domain = str(r.domain);
+    return {
+      key: `${domain ?? "row"}-${i}`,
+      company: str(r.company) ?? domain ?? "Unknown company",
+      domain,
+      domainUrl: domain && /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(domain) ? `https://${domain}` : null,
+      trigger: str(r.trigger),
+      date: str(r.trigger_date),
+      buyer: str(r.buyer_title),
+      source: httpUrl(str(r.trigger_url)),
+    };
+  });
+  const wide = mode === "page" ? "lg" : "xl";
+  const link = "font-medium underline underline-offset-4";
+  const domainLink = (it: (typeof items)[number]) =>
+    it.domainUrl ? (
+      <a href={it.domainUrl} target="_blank" rel="noopener noreferrer" className={cn(link, "wrap-anywhere")}>
+        {it.domain}
+      </a>
+    ) : (
+      <span className="wrap-anywhere">{it.domain}</span>
+    );
+  const sourceLink = (it: (typeof items)[number], cls?: string) =>
+    it.source ? (
+      <a href={it.source} target="_blank" rel="noopener noreferrer" className={cn(link, "inline-flex items-center gap-1.5", cls)}>
+        Source
+        <ExternalLink className="size-3.5 shrink-0" aria-hidden />
+      </a>
+    ) : null;
+
+  return (
+    <Panel title="Sample list">
+      <ul className={cn("divide-y divide-border", wide === "lg" ? "lg:hidden" : "xl:hidden")}>
+        {items.map((it) => (
+          <li key={it.key} className="space-y-1 py-3 first:pt-0 last:pb-0">
+            <div className="flex flex-wrap items-baseline gap-x-2">
+              <span className="font-semibold">{it.company}</span>
+              {it.domain ? <span className="text-[0.8125rem]">{domainLink(it)}</span> : null}
+            </div>
+            {it.trigger ? <p className="wrap-anywhere">{it.trigger}</p> : null}
+            <p className="flex flex-wrap items-center gap-x-3 text-[0.8125rem] text-muted-foreground">
+              {it.date ? <span className="tabular">{it.date}</span> : null}
+              {it.buyer ? <span>Buyer: {it.buyer}</span> : null}
+            </p>
+            {sourceLink(it, "min-h-11 sm:min-h-0")}
+          </li>
+        ))}
+      </ul>
+      <table className={cn("hidden w-full text-[0.9375rem]", wide === "lg" ? "lg:table" : "xl:table")}>
+        <thead>
+          <tr className="border-b text-left text-[0.8125rem] text-muted-foreground">
+            <th className="py-2 pr-3 font-medium">Company</th>
+            <th className="py-2 pr-3 font-medium">Trigger</th>
+            <th className="py-2 pr-3 font-medium whitespace-nowrap">Date</th>
+            <th className="py-2 pr-3 font-medium">Buyer</th>
+            <th className="py-2 font-medium">
+              <span className="sr-only">Source</span>
+            </th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {items.map((it) => (
+            <tr key={it.key} className="align-top">
+              <td className="min-w-36 py-2.5 pr-3">
+                <span className="block font-semibold">{it.company}</span>
+                {it.domain ? <span className="text-[0.8125rem]">{domainLink(it)}</span> : null}
+              </td>
+              <td className="py-2.5 pr-3 wrap-anywhere">{it.trigger}</td>
+              <td className="tabular py-2.5 pr-3 whitespace-nowrap">{it.date}</td>
+              <td className="py-2.5 pr-3">{it.buyer}</td>
+              <td className="py-2.5 whitespace-nowrap">{sourceLink(it)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {dropped > 0 ? (
+        <p className="tabular text-[0.8125rem] text-ink-3">
+          {dropped} {dropped === 1 ? "row" : "rows"} dropped by the database
+        </p>
+      ) : null}
+    </Panel>
   );
 }
 
@@ -245,7 +336,37 @@ export async function DraftDetail({ id, mode }: { id: string; mode: "page" | "pa
   const whatTheySell = typeof agentMeta?.what_they_sell === "string" ? agentMeta.what_they_sell : null;
   const scoreIn =
     typeof agentMeta?.score_in === "number" && agentMeta.score_in !== d.final_score ? agentMeta.score_in : null;
-  const agentSources = Boolean(signalUrl || sourceUrls.length || whatTheySell || scoreIn !== null);
+  // Sprint 18: lane, buyer and budget facts, and the sample accounts (lane A).
+  const lane = str(agentMeta?.lane);
+  const sellsTo = str(agentMeta?.sells_to);
+  const buyerPool = num(agentMeta?.buyer_pool);
+  const gtmPeople = num(agentMeta?.gtm_people);
+  const revenueSignal = str(agentMeta?.revenue_signal);
+  const author = agentMeta?.signal_author && typeof agentMeta.signal_author === "object" ? agentMeta.signal_author : null;
+  const authorText = [str(author?.name), str(author?.role)].filter(Boolean).join(", ") || null;
+  const fnd = agentMeta?.funding && typeof agentMeta.funding === "object" ? agentMeta.funding : null;
+  const fundingText =
+    [str(fnd?.stage), formatMusd(fnd?.amount_musd), str(fnd?.date), str(fnd?.lead_investor) ? `led by ${str(fnd?.lead_investor)}` : null]
+      .filter(Boolean)
+      .join(", ") || null;
+  const fundingUrl = httpUrl(str(fnd?.url));
+  const sample = Array.isArray(agentMeta?.sample)
+    ? agentMeta.sample.filter((r): r is SampleRow => r !== null && typeof r === "object")
+    : [];
+  const sampleDropped = num(agentMeta?.sample_dropped) ?? 0;
+  const agentSources = Boolean(
+    signalUrl ||
+      sourceUrls.length ||
+      whatTheySell ||
+      scoreIn !== null ||
+      lane ||
+      sellsTo ||
+      buyerPool !== null ||
+      gtmPeople !== null ||
+      authorText ||
+      fundingText ||
+      revenueSignal,
+  );
   // The agent writes its signal to both trigger and clay_trigger, and the signal URL to angle_basis:
   // show each once (the dated Trigger fact and the Agent sources links).
   const sameTrigger = agent && (d.trigger ?? "").trim() === (d.clay_trigger ?? "").trim();
@@ -387,9 +508,13 @@ export async function DraftDetail({ id, mode }: { id: string; mode: "page" | "pa
         </Panel>
       ) : null}
 
+      {sample.length || sampleDropped > 0 ? <SampleList rows={sample} dropped={sampleDropped} mode={mode} /> : null}
+
       {agentSources ? (
         <Panel title="Agent sources">
           <dl className="space-y-3">
+            <Fact term="Lane" value={lane ? (LANE_LABELS[lane] ?? idWords(lane)) : null} />
+            <Fact term="Signal by" value={authorText} />
             {signalUrl ? (
               <div className="space-y-0.5">
                 <dt className="text-[0.8125rem] font-medium text-muted-foreground">Signal</dt>
@@ -413,6 +538,30 @@ export async function DraftDetail({ id, mode }: { id: string; mode: "page" | "pa
               </div>
             ) : null}
             <Fact term="What they sell" value={whatTheySell} />
+            <Fact term="Sells to" value={sellsTo} />
+            {/* Prompt v3 step 5: a full first Clay page is recorded as 20, a minimum rather than a count. */}
+            <Fact
+              term="Buyer pool"
+              value={
+                buyerPool === null
+                  ? null
+                  : `${buyerPool === 20 ? "20 or more" : buyerPool} matching companies in Clay search`
+              }
+            />
+            <Fact
+              term="GTM people"
+              value={gtmPeople === null ? null : gtmPeople === 0 ? "None found" : `${gtmPeople} in sales, growth, BD or RevOps`}
+            />
+            {fundingText ? (
+              <div className="space-y-0.5">
+                <dt className="text-[0.8125rem] font-medium text-muted-foreground">Funding</dt>
+                <dd className="space-y-1">
+                  <span className="block wrap-anywhere">{fundingText}</span>
+                  {fundingUrl ? <SourceLink url={fundingUrl} /> : null}
+                </dd>
+              </div>
+            ) : null}
+            <Fact term="Revenue signal" value={revenueSignal} />
           </dl>
           {scoreIn !== null ? (
             <p className="tabular text-[0.8125rem] text-ink-3">Score sent by the agent: {scoreIn}</p>
@@ -429,7 +578,7 @@ export async function DraftDetail({ id, mode }: { id: string; mode: "page" | "pa
       >
         <Panel title="Why this person, why now">
           <dl className="space-y-3">
-            <Fact term="Angle" value={idWords(d.angle)} />
+            <Fact term="Angle" value={d.angle ? (ANGLE_LABELS[d.angle] ?? idWords(d.angle)) : null} />
             <Fact term="Angle basis" value={sameBasis ? null : d.angle_basis} />
             <Fact term="Account type" value={idWords(d.account_type)} />
             <Fact term="Product category" value={idWords(d.product_category)} />
