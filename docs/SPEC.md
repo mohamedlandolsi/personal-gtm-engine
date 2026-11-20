@@ -605,3 +605,80 @@ Not legal advice. Public business contact data only; no authenticated scraping; 
 | A product named once can slip the product-term guard | Review step catches it |
 | Reply rate not measured yet | Send approved drafts, track replies through deal stages, feed results into scoring |
 | No send path | If ever added: suppression list, country gate and daily cap enforced in SQL (ADR-S10-9) |
+
+## 48. Claude lead digest
+
+A scheduled Claude task ("GTM lead digest", Opus, Mon/Wed/Fri 07:46 Tunis, prompt v3) is a second lead source next to the engine. It reads public sources, checks dedupe in Neon before it spends any credit, and writes each lead through one database function. It never sends anything: its drafts wait in the console queue with a "Claude" chip, like the engine's (ADR-133 to ADR-143).
+
+| Item | As built |
+|---|---|
+| Write path | `gtm_ingest_agent_lead(jsonb)`, one call per lead. It gates, dedupes, validates and inserts into `accounts`, `contacts`, `outreach_queue` (or `gig_posts`), and logs every call to `agent_ingest_log` (ADR-133) |
+| Read path | `gtm_agent_check(domains[], urls[])`, read only, called once per run before any enrichment |
+| Allowed SQL | Only those two statements. The Neon connector has owner rights, so this is a prompt rule, made visible by the log |
+| Ownership | Agent rows have `source = 'claude_digest'` and live in Neon only; the Sheet sync skips them (ADR-134) |
+| Sources | Funding news (last 60 days), the 2 newest yc-oss batches, Show HN (Algolia), Clay search (free), HN "Who is hiring?" and "Seeking freelancer" threads, JobsPipe when credits allow. LinkedIn, Reddit and the n8n and Make forums: search snippets only (ADR-136) |
+| Caps per run | Tavily 20 calls, Apollo reveals 4 (score 70+), Clay enrichment 1 (score 80+), JobsPipe 1 search; sample accounts are never enriched |
+| Migrations | `db/s17_agent_ingest.sql`, `db/s18_pipeline_lane.sql` (both in `db/schema.sql`) |
+
+### 48.1 Lanes
+
+| Lane | `lead_type` | Target | Outcome |
+|---|---|---|---|
+| A | `pipeline_build` | B2B startup with a live product, fewer than 3 people in sales, growth, BD or RevOps, a budget signal, and a buyer that can be found in Clay | Draft with 3 to 5 sample accounts that fit their buyer; `lead_track` `smb_direct`, angle `sample_list` (ADR-137) |
+| B | `outbound_account` | Startup of 50 people or fewer hiring a GTM engineer, RevOps, marketing ops or a first SDR or AE | Interim, fixed-scope build pitch; `lead_track` `smb_direct`, `source_meta.lane` `hiring_signal` |
+| C | `agency_partner` | Lead-gen, RevOps or growth agency of 2 to 30 people | Subcontract pitch; `lead_track` `agency_partner` |
+| D | `seeking_freelancer` | Public post asking for n8n, Clay, HubSpot, Make, Zapier, CRM, lead gen, outbound or automation help | Reply to the post; `gig_posts` row, `lead_track` `gig_post` |
+| E | `job_opening` | Full-time or part-time role, remote worldwide or EMEA or with relocation, about 2 years of experience or less, matching skills | Logged as `routed:job_opening`, never drafted, no contact (ADR-141) |
+
+Excluded everywhere: companies over 200 people, B2C apps, gambling, adult, crypto tokens, and companies that sell CRM, outbound, lead data, email finding, deliverability, sales tech or workflow automation (agencies are exempt from the last rule). A run aims for 5 leads, at least 3 from lane A; job openings do not count.
+
+### 48.2 Payload
+
+All lanes keep the Sprint 17 contract: `run_id`, `lead_type`, company fields, `signal`, `signal_date`, `signal_url`, `why_chosen`, `sources`, `source_urls`, `score` and `score_parts` (need, icp, reach, timing, practical), `best_channel`, `contact`, `drafts`, `post` (lane D). Sprint 18 adds:
+
+| Key | Lanes | Used for |
+|---|---|---|
+| `lead_type: "pipeline_build"` | A | `lead_track` `smb_direct`, angle `sample_list`, lane A gates |
+| `lead_type: "job_opening"` + `job {title, url, location, remote, salary, posted_at, why_fit}` | E | Logged as `routed:job_opening`, deduped by URL, shown in `v_agent_job_openings` |
+| `site_tagline` | A, B | Homepage title or meta description, verbatim; feeds the overlap gate |
+| `sells_to` | A | The startup's buyer in one line (title, company type, size, region) |
+| `signal_author {name, role}` | all | Who wrote the post or announcement; drives the attribution check |
+| `funding {stage, amount_musd, date, lead_investor, url}` | all | Budget gate (A) and fresh-funding check (all) |
+| `revenue_signal` | A | Budget gate when there is no round in the last 12 months |
+| `gtm_people` | A (B optional) | Sales, growth, BD or RevOps people found at the startup |
+| `buyer_pool` | A | Companies matching `sells_to` in Clay search; 20 means a full first page, so at least 20 |
+| `news_checked: true` | all | Set after the 30-day news search; missing adds `news_not_checked` to the warnings in `risk_notes` |
+| `sample[] {company, domain, trigger, trigger_date, trigger_url, buyer_title}` | A | 3 to 5 accounts; the database validates and renders them |
+
+The lane A `email_body` is 50 to 110 words with no sign-off and no list. The database appends "A few accounts that match your buyer right now:", the sample rows (5 by email, 3 on LinkedIn) and the signature (ADR-140). The payload, lane facts and kept sample rows are stored in `accounts.source_meta`, which the console shows in the Agent sources and Sample list panels.
+
+### 48.3 Gates and validators
+
+The database recomputes the score from the five capped parts and checks in this order: lead type, job route (E), score 55 or more, 200 people or fewer, product overlap (A, B), domain and named contact, lane A gates, dedupe, validator. A failed gate writes nothing; a validator issue still inserts the draft, as `needs_redraft` (ADR-135).
+
+| Step | Rule | Outcome |
+|---|---|---|
+| Job route | `lead_type = job_opening`, URL and title present, URL not logged before | `routed:job_opening` or `duplicate:job_opening` |
+| Score and size | Recomputed score 55 or more, 200 people or fewer | `rejected:score_below_55`, `rejected:over_200_people` |
+| Overlap (A, B) | Company, tagline, what they sell and industry match the engine's Sprint 14 categories (crm, outbound, enrichment incl. email finders and lead lists, deliverability, sales_tech, automation) | `rejected:product_overlap_<category>` (ADR-139) |
+| Buyer pool (A) | `buyer_pool` 20 or more | `rejected:buyer_not_findable` |
+| Budget (A) | A round in the last 365 days, or a `revenue_signal` | `rejected:no_budget_signal` |
+| Sales team (A) | `gtm_people` under 3 | `rejected:has_sales_team` |
+| Sample (A) | Each row needs company, a valid domain (not their own), trigger, an `http` trigger URL, a trigger date within 120 days and not in the future, and a buyer title; no duplicate domains; at most 5 kept | Bad rows dropped and counted in `sample_dropped`; fewer than 3 left is `rejected:sample_too_small` (ADR-138) |
+| Dedupe | Domain, contact LinkedIn, contact email, gig post URL | `duplicate:<what>` |
+| Attribution (all) | "your post", "you posted" or "your HN post" only if `signal_author` is the contact (gig posts: the poster) | `needs_redraft` with `post_attribution` (ADR-142) |
+| Fresh funding (all) | A round dated within 30 days must be mentioned (round word or lead investor) | `needs_redraft` with `fresh_funding_unused` (ADR-142) |
+| Style | No em or en dashes, no placeholders, length limits (lane A body 40 to 130 words without the sample and signature; other lanes 40 to 150) | `needs_redraft` with the issue name |
+
+Lane A scoring uses the same five parts with its own rubric (need counts a recent round only when `gtm_people` is 2 or fewer, ADR-143); the database still recomputes the total.
+
+### 48.4 Log and views
+
+| Object | Shows |
+|---|---|
+| `agent_ingest_log` | One row per call: run id, agent, lead type, domain or post key, result (`inserted`, `routed:...`, `duplicate:...`, `rejected:...`, `error:...`), the account, contact and outreach ids written, approval status, validator issues, score and the full payload |
+| `v_agent_ingest_runs` | Per run: calls, inserted, needs_redraft, duplicates, rejected, errors, routed. Console Runs page, Claude lead digest card |
+| `v_agent_job_openings` | Lane E roles: company, domain, title, url, location, remote, salary, posted_at, why_fit. Console Runs page, "Jobs to apply to" card |
+| `v_agent_domains` | Agent-owned domains, for an optional engine dedupe read later |
+
+Kill switch: pause the scheduled task. Rollback: re-run `db/s17_agent_ingest.sql`, which restores the Sprint 17 function; the Sprint 18 views and helpers stay and do no harm.

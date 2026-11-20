@@ -59,6 +59,7 @@ Numbers come from the engine's own telemetry in Neon (`ops`, `outreach_queue`, `
 | Crash recovery | Deleted link adopted, not duplicated (0 duplicates, 7 of 7 companies) |
 | Failure path | Bad config gives 7 readable HubSpot errors, run stays green, 0 quarantined |
 | Offline SQL checks for the HubSpot layer | 29 of 29 |
+| Agent drafts approved, first two weeks of lane A | To fill on 2026-12-03, two weeks after the first lane A run (2026-11-19) |
 | Monthly cost | $0 |
 
 ### Sprint 14 acceptance runs (November 12 and 13, 2026)
