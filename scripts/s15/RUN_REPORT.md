@@ -58,13 +58,13 @@ HubSpot: `gtm_lead_track` exists on companies and deals.
 
 | Agency | Directory, tier | Score | Breakdown |
 |---|---|---|---|
-| Data4Prime Srl | n8n, Premium | 88 | stack=100 capacity=60 size=90 tz_lang=100 |
-| Saleslift Studio | Clay, Studio | 83 | stack=100 capacity=40 size=90 tz_lang=100 |
-| OneThousandPieces | Clay, Studio | 83 | stack=100 capacity=40 size=90 tz_lang=100 |
-| FastRocket GmbH | n8n, Premium | 75 | stack=75 capacity=60 size=70 tz_lang=100 |
-| Avanai | n8n, Premium | 71 | stack=50 capacity=60 size=90 tz_lang=100 |
-| SVA System Vertrieb Alexander GmbH | n8n, Premium | 67 | stack=50 capacity=60 size=70 tz_lang=100 |
-| Exxeta | n8n, Premium | 67 | stack=50 capacity=60 size=70 tz_lang=100 |
+| Agency A | n8n, Premium | 88 | stack=100 capacity=60 size=90 tz_lang=100 |
+| Agency B | Clay, Studio | 83 | stack=100 capacity=40 size=90 tz_lang=100 |
+| Agency C | Clay, Studio | 83 | stack=100 capacity=40 size=90 tz_lang=100 |
+| Agency D | n8n, Premium | 75 | stack=75 capacity=60 size=70 tz_lang=100 |
+| Agency E | n8n, Premium | 71 | stack=50 capacity=60 size=90 tz_lang=100 |
+| Agency F | n8n, Premium | 67 | stack=50 capacity=60 size=70 tz_lang=100 |
+| Agency G | n8n, Premium | 67 | stack=50 capacity=60 size=70 tz_lang=100 |
 
 Observation: the last three profiles say "Enterprise focused" and list project budgets from 5,000 USD up. Directory
 profiles carry no head count, so they pass the 25-person rule as "unknown size". If the first real run shows more

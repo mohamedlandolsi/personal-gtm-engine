@@ -4,6 +4,8 @@ Twelve n8n workflows, one Google Sheet, one Neon Postgres database, a Next.js re
 
 Since Sprint 15 the system works three lead tracks: `smb_direct` (the original SMB track), `agency_partner` (boutique GTM agencies from the Clay and n8n experts directories, run through the same engine) and `gig_post` (public posts where someone hires for n8n, Clay or HubSpot work, handled by `GTM Gig Finder` straight in Neon). See [Lead tracks](#lead-tracks-sprint-15).
 
+Since Sprint 17 a scheduled Claude task is a second lead source outside n8n. It writes only through one Postgres function, `gtm_ingest_agent_lead()`, and its drafts land in the same console queue. See [Claude lead digest](#claude-lead-digest-sprints-17-and-18).
+
 ```
                  Inputs                       n8n (Docker on your laptop)                     Stores
   seeds, YC, HN, experts ---> Personal GTM Engine (manual) ---------------------> Sheets: accounts, contacts, queues, ops
@@ -22,6 +24,8 @@ Since Sprint 15 the system works three lead tracks: `smb_direct` (the original S
   Sheets <-- GTM Neon Sync (every 15 min): pushes console vetoes, re-drafts and config, mirrors accounts, contacts, ops, config into Neon
   Neon   <-- GTM Console (Next.js on Vercel, password gate): review, approve, edit, veto, config
   Neon  <--> GTM HubSpot Sync (every 30 min): approved accounts to HubSpot, deal stages back (see HubSpot layer)
+  Neon   <-- Claude lead digest (scheduled task, Mon/Wed/Fri, Neon connector): gtm_agent_check() (read only),
+             then gtm_ingest_agent_lead() per lead --> accounts, contacts, outreach_queue or gig_posts, agent_ingest_log
 
   Clay workbook "Personal GTM Engine"
     clay_queue ---------> [Accounts v2] --CSV--> clay_export_accounts --> GTM Clay Bridge --> clay_results + accounts.clay_trigger*
@@ -35,7 +39,7 @@ Since Sprint 15 the system works three lead tracks: `smb_direct` (the original S
 
 | Workflow | Nodes | Trigger | Job |
 |---|---|---|---|
-| Personal GTM Engine | 74 | Manual | Discovery, gates, scoring, website enrichment, contact merge, drafting into Neon. Since Sprint 15 it also reads the Clay and n8n experts directories (`Partner Directories Source`) and switches on `lead_track` in the scoring, Clay, contact and drafting nodes |
+| Personal GTM Engine | 74 (Sprint 15 export; more live since the Sprint 16 nodes) | Manual | Discovery, gates, scoring, website enrichment, contact merge, drafting into Neon. Since Sprint 15 it also reads the Clay and n8n experts directories (`Partner Directories Source`) and switches on `lead_track` in the scoring, Clay, contact and drafting nodes |
 | GTM Contact Finder | 13 | Manual | Founder lookup: YC page first, Tavily as a gated fallback |
 | GTM Run | 10 | Manual | Run chain: GTM Gig Finder (Sprint 15, continue on error), GTM Neon Sync, Engine, Contact Finder, Engine, GTM Neon Sync. Every step hangs off the trigger and runs top to bottom (execution order v1), so the chain does not depend on what a sub-workflow returns. Fails only when accounts are queued and neither engine pass wrote a contact; otherwise returns `ok_queue_draining` and the next step (ADR-105, Sprint 14 patch). The called workflows each have a "When Executed by Another Workflow" trigger |
 | GTM Gig Finder | 26 | Called by GTM Run; every 3 h once published | Sprint 15 gig lane: reads forum notification emails (`Read Forum Mail`, disabled until you add a Gmail credential) and posts added on the console Gigs page, runs `Gig Gates`, `Score Gigs` and `Draft Gig Reply`, writes `gig_posts`, gig drafts and one `gig_ops` row, expires stale posts and pings Discord for top scores (ADR-114 to 116) |
@@ -66,6 +70,57 @@ One `lead_track` column on `accounts` and `outreach_queue` instead of a second p
 | Clay | Research and email waterfall | Email waterfall only, no research credits (ADR-118) | None |
 | Draft | 6 SMB angles, validator v2 | 3 agency angles (`white_label_overflow`, `stack_specific_help`, `hire_bridge`), validator v3 | One reply per post (60 to 130 words), gig validator |
 | HubSpot | Yes, after approval | Yes, after approval, with `gtm_lead_track` | No (`v_hubspot_scope` excludes it) |
+
+## Sprint 16 checks (applied, not yet run)
+
+Applied to `Personal GTM Engine` on 2026-11-17 and not yet run: the last engine run was 2026-11-16, so `trigger_checks` and `account_checks` are still empty. Schema: the Sprint 16 block of `db/schema.sql` (also kept as `db/s16_trigger_checks.sql`). The `workflows/` export predates these nodes.
+
+| Check | Where | Rule |
+|---|---|---|
+| Trigger check | `Fetch Trigger Checks`, `Select Trigger Lookups`, `Has Trigger Lookups`, `Tavily Trigger Search`, `Parse Triggers`, `Save Trigger Checks`, before `Select Outreach Pairs` | A cached Tavily news search per candidate account, stored in `trigger_checks` and reused for 30 days (ADR-120) |
+| ICP gate | `Select Outreach Pairs` | `smb_direct` only: no `growth` stage, at most 40 staff, no round of 15M+ (ADR-122) |
+| Consent countries | `Select Outreach Pairs` | Contacts in `outreach.email_consent_countries` (default Germany, Austria) get LinkedIn only (ADR-129) |
+| Clay account check | Clay nodes before drafting, results in `account_checks` | Clay people search on the pairs about to be drafted: 2 or more current GTM people is a gate row, exactly 1 costs 15 points, and the contact must be listed as current in a check from the last 14 days, within the Clay Free budget (ADR-128, ADR-130, ADR-131) |
+
+The 3 new draft columns (`contact_verified_at`, `contact_verified_title`, `gtm_people`) are appended to `gtm_insert_draft()`, `v_review_queue` and `n8n_outreach_queue_sheet`.
+
+## Claude lead digest (Sprints 17 and 18)
+
+A scheduled Claude task ("GTM lead digest", Opus, Mon/Wed/Fri 07:46 Tunis) reads public sources, checks dedupe before it spends a credit, and writes each lead through one database function. It never sends anything, never touches the Sheet, and its rows live in Neon only (`source = 'claude_digest'`, ADR-134). Full payload, gates and views: [SPEC.md section 48](SPEC.md#48-claude-lead-digest).
+
+```
+  Claude task --> gtm_agent_check(domains[], urls[])     read only, before any credit
+              --> gtm_ingest_agent_lead(jsonb)            one call per lead, the only write path (ADR-133)
+                    gates --> dedupe --> validator --> accounts, contacts, outreach_queue (or gig_posts)
+                    every call --> agent_ingest_log --> v_agent_ingest_runs, v_agent_job_openings
+  Console: Claude chip and Source filter on the queue, Sample list panel, Runs page digest card and "Jobs to apply to"
+```
+
+| Lane | `lead_type` | Outcome |
+|---|---|---|
+| A | `pipeline_build` | B2B startup with a product and no outbound engine: draft with 3 to 5 sample accounts that fit its buyer, angle `sample_list` (ADR-137) |
+| B | `outbound_account` | Small startup hiring a GTM role: interim, fixed-scope build pitch |
+| C | `agency_partner` | Small agency: subcontract pitch |
+| D | `seeking_freelancer` | Public post asking for help: `gig_posts` row and a reply draft |
+| E | `job_opening` | Role the owner could take: logged, never drafted (ADR-141); routed only after the seniority and open-posting gates (ADR-145) |
+
+Gates, in order (a failed gate writes nothing; a validator issue inserts the draft as `needs_redraft`, ADR-135):
+
+1. Lead type
+2. Job route (E): URL and title present, URL not logged before
+3. Score 55 or more, recomputed from five capped parts
+4. 200 people or fewer
+5. Product overlap (A, B), the engine's Sprint 14 categories (ADR-139)
+6. Domain and a named contact
+7. Lane A: buyer pool 20 or more, a round in the last 12 months or a revenue signal, fewer than 3 sales people, at least 3 valid sample rows (ADR-138)
+8. Dedupe on domain, contact LinkedIn, contact email, gig post URL
+9. Validator: dashes, placeholders, lengths, post attribution, fresh funding (ADR-142)
+
+| View | Shows |
+|---|---|
+| `v_agent_ingest_runs` | Per run: calls, inserted, needs_redraft, duplicates, rejected, errors, routed |
+| `v_agent_job_openings` | Lane E roles for the "Jobs to apply to" card |
+| `v_agent_domains` | Agent-owned domains, for an optional engine dedupe read later |
 
 ## HubSpot layer
 

@@ -648,7 +648,7 @@ All lanes keep the Sprint 17 contract: `run_id`, `lead_type`, company fields, `s
 | `gtm_people` | A (B optional) | Sales, growth, BD or RevOps people found at the startup |
 | `buyer_pool` | A | Companies matching `sells_to` in Clay search; 20 means a full first page, so at least 20 |
 | `news_checked: true` | all | Set after the 30-day news search; missing adds `news_not_checked` to the warnings in `risk_notes` |
-| `sample[] {company, domain, trigger, trigger_date, trigger_url, buyer_title}` | A | 3 to 5 accounts; the database validates and renders them |
+| `sample[] {company, domain, trigger, trigger_date, trigger_url, buyer_title, buyer_name?}` | A | 3 to 5 accounts; the database validates and renders them. `buyer_name` only when the trigger article names that person in that role (ADR-144) |
 
 The lane A `email_body` is 50 to 110 words with no sign-off and no list. The database appends "A few accounts that match your buyer right now:", the sample rows (5 by email, 3 on LinkedIn) and the signature (ADR-140). The payload, lane facts and kept sample rows are stored in `accounts.source_meta`, which the console shows in the Agent sources and Sample list panels.
 

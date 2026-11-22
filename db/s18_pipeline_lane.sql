@@ -49,7 +49,7 @@ $$;
 --   gtm_people         people in sales, growth or RevOps roles found at the startup
 --   buyer_pool         contacts matching the startup's buyer in Clay search (free)
 --   news_checked       true after the 30-day news search on this company
---   sample             3 to 5 x {"company","domain","trigger","trigger_date","trigger_url","buyer_title"}
+--   sample             3 to 5 x {"company","domain","trigger","trigger_date","trigger_url","buyer_title","buyer_name"?} (buyer_name optional, ADR-144)
 --   job                {"title","url","location","remote","salary","posted_at","why_fit"} (job_opening)
 create or replace function gtm_ingest_agent_lead(p jsonb)
 returns jsonb
@@ -235,11 +235,14 @@ begin
             v_dropped := v_dropped + 1;
             continue;
           end if;
-          -- company-level facts only: no person names or emails of third parties (ADR-140)
+          -- company-level facts plus an optional buyer_name copied from the trigger article; never emails or links (ADR-140, amended by ADR-144)
           v_sample := v_sample || jsonb_build_array(jsonb_build_object(
             'company', left(trim(r->>'company'), 120), 'domain', s_dom,
             'trigger', left(trim(r->>'trigger'), 200), 'trigger_date', s_date,
-            'trigger_url', left(trim(r->>'trigger_url'), 500), 'buyer_title', left(trim(r->>'buyer_title'), 80)));
+            'trigger_url', left(trim(r->>'trigger_url'), 500), 'buyer_title', left(trim(r->>'buyer_title'), 80),
+            'buyer_name', case when length(trim(coalesce(r->>'buyer_name', ''))) between 3 and 80
+                                and trim(r->>'buyer_name') ~ '^[^0-9@/:<>{}\[\]\n]+ [^0-9@/:<>{}\[\]\n]+$'
+                               then trim(r->>'buyer_name') end));
         end loop;
         if jsonb_array_length(v_sample) < 3 then v_result := 'rejected:sample_too_small'; exit main; end if;
       end if;
@@ -309,9 +312,11 @@ begin
 
     -- S18: the database renders the sample (5 rows by email, 3 on LinkedIn) and the email signature
     if v_type = 'pipeline_build' then
-      select array_agg(format('%s. %s (%s): %s, %s. Buyer: %s', t.i, t.x->>'company', t.x->>'domain',
+      select array_agg(format('%s. %s (%s): %s, %s. %s', t.i, t.x->>'company', t.x->>'domain',
                               t.x->>'trigger', to_char((t.x->>'trigger_date')::date, 'Mon FMDD'),
-                              t.x->>'buyer_title') order by t.i)
+                              case when nullif(t.x->>'buyer_name', '') is not null
+                                   then 'Contact: ' || (t.x->>'buyer_name') || ', ' || (t.x->>'buyer_title')
+                                   else 'Buyer: ' || (t.x->>'buyer_title') end) order by t.i)
         into v_lines
         from jsonb_array_elements(v_sample) with ordinality as t(x, i)
        where v_channel = 'email' or t.i <= 3;

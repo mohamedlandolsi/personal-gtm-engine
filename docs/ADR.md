@@ -1,6 +1,6 @@
 # Architecture Decision Records: Personal GTM Engine
 
-Consolidated from every ADR in the project docs (SPEC, Roadmap, Sprint 1 to 7 guides and patches, Clay Operator guide, project review, run guide, explainer), as of 2026-10-08. `ADR-PGT-NNN` from the sprint guides is written as `ADR-NNN`. When a number was already taken, the later ADR got the next free number after ADR-049 and says what it was originally numbered. If the same decision appears in several docs, it is listed once with all its sources.
+Consolidated from every ADR in the project docs (SPEC, Roadmap, Sprint 1 to 7 guides and patches, Clay Operator guide, project review, run guide, explainer), as of 2026-11-22. `ADR-PGT-NNN` from the sprint guides is written as `ADR-NNN`. When a number was already taken, the later ADR got the next free number after ADR-049 and says what it was originally numbered. If the same decision appears in several docs, it is listed once with all its sources.
 
 ## Table of contents
 
@@ -130,10 +130,12 @@ Consolidated from every ADR in the project docs (SPEC, Roadmap, Sprint 1 to 7 gu
 | ADR-137 | A pipeline-build lane with a sample-list offer | Accepted |
 | ADR-138 | Lane A gates in the database | Accepted |
 | ADR-139 | The engine's product-overlap gate also runs on agent leads | Accepted |
-| ADR-140 | Sample rows are company-level and rendered by the database | Accepted |
+| ADR-140 | Sample rows are company-level and rendered by the database | Superseded in part by ADR-144 |
 | ADR-141 | Jobs are routed, not pitched | Accepted |
 | ADR-142 | Attribution and fresh-funding validators | Accepted |
 | ADR-143 | Lane A need score counts sales people, not "no sales hire" | Accepted |
+| ADR-144 | Sample rows may name the buyer when the trigger article does | Accepted |
+| ADR-145 | Lane E routes a job only after a seniority gate and an open-posting check | Accepted |
 
 ---
 
@@ -1022,10 +1024,10 @@ Consolidated from every ADR in the project docs (SPEC, Roadmap, Sprint 1 to 7 gu
 **Source:** Sprints/Sprint 18 - Pipeline Lane and Agent Fixes Guide.md (sections 2 and 12); db/s18_pipeline_lane.sql
 
 ## ADR-140: Sample rows are company-level and rendered by the database
-**Status:** Accepted
+**Status:** Superseded in part by ADR-144 (an optional buyer name is now allowed; the rest stands)
 **Context:** The lane A offer is proof: real accounts that fit the prospect's buyer, in a cold email to a stranger.
 **Decision:** Each row is company, domain, trigger, date, buyer title and source URL. No names or emails of people at the sample companies. The database formats the list (5 rows by email, 3 on LinkedIn) and appends the signature.
-**Trade-offs / consequences:** Less striking than named contacts, but no third-party personal data in a cold email to a stranger, and the format is identical across leads.
+**Trade-offs / consequences:** Less striking than named contacts, but no third-party personal data in a cold email to a stranger, and the format is identical across leads. Superseded in part by ADR-144: a row may now carry the buyer's name when the trigger article names that person. Emails, phones and LinkedIn links stay out.
 **Source:** Sprints/Sprint 18 - Pipeline Lane and Agent Fixes Guide.md (section 12); db/s18_pipeline_lane.sql
 
 ## ADR-141: Jobs are routed, not pitched
@@ -1048,6 +1050,21 @@ Consolidated from every ADR in the project docs (SPEC, Roadmap, Sprint 1 to 7 gu
 **Decision:** Round in the last 60 days and `gtm_people` 2 or fewer: 30. New tier: round 61 to 180 days ago and `gtm_people` 2 or fewer: 22. Prompt-only change; the database still recomputes from the parts and rejects under 55.
 **Trade-offs / consequences:** Startups with one or two fresh commercial hires now pass; those hires may already own pipeline. The sample list is still the test: a lead without 3 verified rows never reaches the console.
 **Source:** Sprints/Sprint 18 - Pipeline Lane and Agent Fixes Guide.md (sections 7 and 12)
+
+## ADR-144: Sample rows may name the buyer when the trigger article does
+**Status:** Accepted (2026-11-22)
+**Context:** A manual review of 10 agent leads on 2026-11-22 found sample buyer titles the agent had invented (a finance title at a logistics group that no source showed, an assumed CFO, an assumed COO). Title-only rows also undersell the offer, which promises "the buyer found". The corrected drafts named people from the trigger articles (for example a regional managing director named in a logistics company's press release), which read as stronger proof.
+**Decision:** Each sample row may carry an optional `buyer_name`. The agent fills it only when the `trigger_url` article itself names that person in `buyer_title`, and that person's function is the one the startup sells to; it never looks a name up elsewhere, never uses a page older than the trigger, and never enriches the person. `gtm_ingest_agent_lead` keeps the name only if it is 3 to 80 characters with at least two words and no digits, @, slashes, colons or brackets, then renders "Contact: Name, Title"; otherwise it renders "Buyer: Title" as before. `buyer_title` must also be a title a source shows; with no source the agent writes a plain function ("Finance lead"). Emails, phone numbers and LinkedIn links of people at sample companies stay out.
+**Trade-offs / consequences:** Names from public press releases about a business role are low-risk, but they can go stale or point at the wrong function (a law firm's managing partner named in one article is a corporate M&A lawyer, not the practice the startup sells to); the same-article rule and the function rule limit both. The format is no longer identical across rows. The database check only catches malformed names, not wrong ones; the prompt's self-check and HITL review do that.
+**Source:** Draft review of 2026-11-22 (Claude chat); live `gtm_ingest_agent_lead` in Neon (project delicate-king-10844221); GTM lead digest prompt (scheduled task, updated 2026-11-22)
+
+## ADR-145: Lane E routes a job only after a seniority gate and an open-posting check
+**Status:** Accepted (2026-11-22)
+**Context:** The first two routed jobs (2026-11-19) were both closed to applications, and one of them was senior. The prompt only said "about 2 years of experience or less" and never opened the posting; `posted_at` was the agent's text.
+**Decision:** E1 skips senior titles, team-lead roles and 3+ years required. E2 opens the posting once (never LinkedIn) and routes it only if it accepts applications and shows a posted date 21 days old or less, copied into `posted_at`. Skipped jobs are listed in the run summary, not logged. Prompt-only change; no migration.
+**Alternatives:** An `agent_job_decisions` table and a dismiss button on the "Jobs to apply to" card. Deferred: with 2 jobs so far it is not worth a migration; revisit if dead jobs still reach the card.
+**Trade-offs / consequences:** LinkedIn-only postings and pages without a visible date are now skipped, so some real openings are lost. A stricter 3-year cutoff also drops "2 to 3 years" stretch roles. Fewer, live jobs beat a card of dead links.
+**Source:** Sprints/Sprint 18 - Pipeline Lane and Agent Fixes Guide.md (section 9 case 27, section 12, where it is labelled ADR-144); GTM lead digest prompt v4 (scheduled task, 2026-11-22)
 
 ---
 

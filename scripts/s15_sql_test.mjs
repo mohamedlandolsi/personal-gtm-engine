@@ -36,7 +36,11 @@ if (neon) {
   const entry = createRequire(path.join(dir, 'package.json')).resolve('@electric-sql/pglite');
   const { PGlite } = await import(pathToFileURL(entry).href);
   const db = new PGlite();
-  await db.exec(fs.readFileSync('db/schema.sql', 'utf8'));
+  // S16: schema.sql now carries the Sprint 16 block, whose views have 3 more columns than the S15 migration
+  // recreates. This test checks the S15 migration on the S15 schema, so it stops before that block.
+  const fullSchema = fs.readFileSync('db/schema.sql', 'utf8');
+  const s16At = fullSchema.indexOf('-- Sprint 16: trigger and account checks');
+  await db.exec(s16At < 0 ? fullSchema : fullSchema.slice(0, fullSchema.lastIndexOf('-- ====', s16At)));
   run = async (s, p) => (p ? (await db.query(s, p)).rows : ((await db.exec(s)).at(-1)?.rows ?? []));
   close = () => db.close();
   console.log('target: pglite (schema.sql)');
